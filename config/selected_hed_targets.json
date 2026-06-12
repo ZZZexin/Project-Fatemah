@@ -1,0 +1,42 @@
+[
+  {
+    "hole": "GR26WAH0001",
+    "run": "OBI_OUTRUN",
+    "path": "C:\\2026_RTIO\\West Angelas\\Sent\\GR26WAH0001\\OTV\\GR26WAH0001_OBI_OUTRUN.hed"
+  },
+  {
+    "hole": "GR26WAH0002",
+    "run": "OBI_INRUN",
+    "path": "C:\\2026_RTIO\\West Angelas\\Sent\\GR26WAH0002\\OTV\\GR26WAH0002_OBI_INRUN.hed"
+  },
+  {
+    "hole": "GR26WAH0003",
+    "run": "OBI_OUTRUN",
+    "path": "C:\\2026_RTIO\\West Angelas\\Sent\\GR26WAH0003\\OTV\\GR26WAH0003_OBI_OUTRUN.hed"
+  },
+  {
+    "hole": "GR26WAH0004",
+    "run": "OBI_INRUN",
+    "path": "C:\\2026_RTIO\\West Angelas\\Sent\\GR26WAH0004\\OTV\\GR26WAH0004_OBI_INRUN.hed"
+  },
+  {
+    "hole": "RC26WAH0001",
+    "run": "OBI_INRUN",
+    "path": "C:\\2026_RTIO\\West Angelas\\Sent\\RC26WAH0001\\OTV\\RC26WAH0001_OBI_INRUN.hed"
+  },
+  {
+    "hole": "RC26WAH0002",
+    "run": "OBI_INRUN",
+    "path": "C:\\2026_RTIO\\West Angelas\\Sent\\RC26WAH0002\\OTV\\RC26WAH0002_OBI_INRUN.hed"
+  },
+  {
+    "hole": "RC26WAH0003",
+    "run": "OBI_INRUN",
+    "path": "C:\\2026_RTIO\\West Angelas\\Sent\\RC26WAH0003\\OTV\\RC26WAH0003_OBI_INRUN.hed"
+  },
+  {
+    "hole": "RC26WAH0007",
+    "run": "OBI_INRUN",
+    "path": "C:\\2026_RTIO\\West Angelas\\Sent\\RC26WAH0007\\OTV\\RC26WAH0007_OBI_INRUN.hed"
+  }
+]
