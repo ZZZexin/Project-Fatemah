@@ -2,50 +2,126 @@
 
 ## What This Is
 WellCAD TV (televiewer) data processing automation.
-Replaces manual step-by-step VBScript execution with a structured pipeline.
+Replaces manual step-by-step VBScript execution with a structured Python pipeline,
+ending with a GUI launcher usable by field staff.
 
 ---
 
-## Two Functional Modules
+## Three Functional Areas
 
-### Module 1 — Batch Convert (around vendor app)
-- **Input:** proprietary raw OTV/ATV files (LOX or similar format from tool vendor)
-- **Process:** batch wrapper that shells out to the vendor's OTV conversion application
+### Module 1 — Batch Convert (around vendor OTV app)
+- **Input:** proprietary raw OTV/ATV files (LOX or similar) from the tool vendor
+- **Process:** pywinauto drives the vendor conversion app to batch-process files
 - **Output:** HED / LGX / LAS files ready for WellCAD import
 - **Status:** NOT YET BUILT — blocked on vendor app details (see open questions)
 
 ### Module 2 — WellCAD Processing Pipeline
-- **Input:** HED / LGX / LAS from Module 1 (or existing files)
+- **Input:** HED / LGX / LAS from Module 1, or dropped in manually
 - **Process:** import into WellCAD → extend/slice logs → orientation (HS + TN/MN) → apply templates
-- **Output:** final _hs_ / _tn_ / _mn_ WCL deliverable files
-- **Status:** SCRIPTS REFACTORED — 001, 003, 004 modernised, in this repo
+- **Output:** final `_hs_` / `_tn_` / `_mn_` WCL deliverable files
+- **Status:** VBS logic refactored and in repo — ready to port to Python
+
+### Utility — Header Filler
+- **Input:** open WCL in WellCAD + Well Report Excel in same folder
+- **Process:** reads Excel Well Report, maps fields to WellCAD header
+- **Output:** WellCAD header populated
+- **Status:** standalone VBS exists (`modules/vb/Header Filling/`) — port to Python later
 
 ---
 
-## File Structure
+## Language Stack
+
+| Library | Job | Where |
+|---|---|---|
+| `pywin32` (win32com.client) | Calls WellCAD COM API directly | Module 2, Header Filler |
+| `pywinauto` | Drives vendor OTV app UI to batch convert | Module 1 |
+| `tkinter` | GUI launcher — built-in Python, no install | Phase 4 |
+
+- Works on WellCAD v5.2. COM is language-agnostic — no v5.7 requirement.
+- x64: no issues. COM handles cross-bitness automatically (out-of-process server).
+- Install: `pip install pywin32 pywinauto`
+
+---
+
+## Folder Structure
 
 ```
 Project_Fatemah/
-├── pipeline.vbs            ← orchestrator (NOT YET BUILT)
-├── config.ini              ← active client config (NOT YET BUILT)
-├── _lib.vbs                ← shared helpers (PARTIALLY BUILT)
-├── pipeline.log            ← runtime output (generated on run)
 │
-├── clients/                ← one .ini per client (NOT YET BUILT)
-│   ├── RTIO.ini
-│   └── ClientB.ini
+├── pipeline.py                        ← entry point — run this
+├── PROJECT_NOTES.md                   ← this file
+├── .gitignore                         ← excludes logs/, __pycache__/, *.pyc
 │
-├── 001_wcRTIOtv_Las_TV_import.vbs        ← Module 2 step 1 (refactored)
-├── 003_wcRTIOtv_extend and slice.vbs     ← Module 2 step 2 (refactored)
-├── 004__wcRTIOtv_any_orientation.vbs     ← Module 2 step 3 (refactored)
+├── config/
+│   ├── default.ini                    ← fallback values for all clients
+│   └── clients/
+│       ├── RTIO.ini                   ← RTIO-specific overrides
+│       └── ClientB.ini
 │
-└── (future) ui/
-    └── launcher.py                       ← Phase 2 UI (tkinter)
+├── modules/
+│   ├── convert/                       ← Module 1: batch convert (pywinauto)
+│   │   ├── batch_convert.py           ← loops input folder, drives vendor app per file
+│   │   └── vendor_app.py             ← pywinauto wrapper: open→load→convert→close
+│   │
+│   ├── process/                       ← Module 2: WellCAD pipeline (pywin32)
+│   │   ├── import_data.py             ← LAS + OTV/ATV image import  (from script 001)
+│   │   ├── process.py                 ← extend, slice, devi logs     (from script 003)
+│   │   └── orient_compile.py          ← HS + TN/MN, templates        (from script 004)
+│   │
+│   ├── header_filler/                 ← Utility: fill WellCAD header from Well Report
+│   │   └── header_filler.py           ← port of universal_wr_reader.vbs
+│   │
+│   └── vb/                            ← legacy VBScript — reference only
+│       ├── _lib.vbs
+│       ├── 001_wcRTIOtv_Las_TV_import.vbs
+│       ├── 003_wcRTIOtv_extend and slice_v2.08.vbs
+│       ├── 004__wcRTIOtv_any_orientation_RTIO_STYLE_V-0.0.vbs
+│       └── Header Filling/
+│           ├── universal_wr_reader.vbs
+│           └── universal_wr_reader_interp.vbs
+│
+├── lib/                               ← shared utilities across all modules
+│   ├── wellcad_helpers.py             ← log_exists(), get_devi_type(), rotate_images() …
+│   ├── las_parser.py                  ← read ~Well and ~Params from LAS files
+│   └── logger.py                      ← timestamped log to file + console
+│
+├── templates/                         ← version-controlled WellCAD templates
+│   ├── shared/                        ← used by all clients
+│   │   ├── AutoBulkLoad.ini
+│   │   ├── HEDImport.ini
+│   │   ├── BMPImport.ini
+│   │   └── ConvertLogTo.ini
+│   └── clients/
+│       ├── RTIO/                      ← RTIO .wdt and .ini files
+│       │   ├── GEOPHYSICS IMPORTd2.wdt
+│       │   ├── RTIO_2_BHTV_OPTV_nsg.wdt
+│       │   ├── RTIO_2_BHTV_nsg.wdt
+│       │   ├── RTIO_2_OPTV_nsg.wdt
+│       │   ├── Template PWS - NSGAZI3.wdt
+│       │   ├── Template PWS - GAZI3.wdt
+│       │   ├── Template PWS - AZI3.wdt
+│       │   ├── Template PWS - NOLASDEV.wdt
+│       │   ├── MN_RotateConfig.ini
+│       │   ├── nsgAZI_RotateConfig.ini
+│       │   ├── gAZI_RotateConfig.ini
+│       │   ├── AZI_RotateConfig.ini
+│       │   ├── AZI_OBI_RotateConfig.ini
+│       │   ├── AZI_ABI_RotateConfig.ini
+│       │   ├── NormaliseImage_1D.ini
+│       │   ├── NormaliseImage_Static.ini
+│       │   ├── PWS_Lookup_DeleteTheseColumnsList_01.ini
+│       │   └── PWS_Lookup_DeleteForHIGHSIDE_List.ini
+│       └── ClientB/
+│
+├── logs/                              ← runtime output — gitignored
+│
+└── ui/                                ← Phase 4
+    └── launcher.py                    ← tkinter: client picker, module toggles, log view
 ```
 
 ---
 
-## Client Config Design (clients/RTIO.ini)
+## Client Config (config/clients/RTIO.ini)
 
 ```ini
 [client]
@@ -54,16 +130,16 @@ company_display  = RIO TINTO IRON ORE
 country          = AUSTRALIA
 
 [paths]
-template_path    = C:\Proc_TV\05_RTIO_TV_LasPrep\templates
-; root_path is auto-detected from script location
+template_path        = templates/clients/RTIO
+shared_template_path = templates/shared
 
 [module1]
-vendor_app       = (TBD — need exe path and CLI flags)
-input_format     = lox
+vendor_app        = (TBD — exe path and CLI/GUI mode)
+input_format      = lox
 otv_output_format = hed
 
 [module2]
-otv_import_mode  = hed          ; bmp or hed
+otv_import_mode  = hed          ; bmp | hed
 devi_preference  = auto         ; auto | nsgazi | gazi | azi
 apply_template   = true
 
@@ -75,55 +151,42 @@ suffix_mn = mn
 
 ---
 
-## Language Decision — OPEN
+## Build Plan
 
-**VBScript path (current):** no new dependencies, but limited error handling and no good UI path.
+### Phase 1 — Foundation
+- [ ] Step 1: Finalise and commit folder structure
+- [ ] Step 2: `lib/logger.py`
+- [ ] Step 3: `lib/las_parser.py`
+- [ ] Step 4: `lib/wellcad_helpers.py`
+- [ ] Step 5: `config/default.ini` + `config/clients/RTIO.ini`
 
-**Python approach — two libraries, two jobs:**
+### Phase 2 — Module 2 (WellCAD pipeline)
+- [ ] Step 6: `modules/process/import_data.py`
+- [ ] Step 7: `modules/process/process.py`
+- [ ] Step 8: `modules/process/orient_compile.py`
+- [ ] Step 9: `pipeline.py` — wire up and test Module 2 end to end
 
-| Library | How it works | Used for |
-|---|---|---|
-| `pywin32` (win32com.client) | Calls WellCAD's COM object directly in code | Module 2 — replaces VBScript entirely, same API |
-| `pywinauto` | Drives any Windows app by clicking its actual UI | Module 1 — automates vendor OTV app if it has no CLI |
+### Phase 3 — Module 1 (batch convert)
+- [ ] Step 10: `modules/convert/vendor_app.py`  *(blocked: need vendor app details)*
+- [ ] Step 11: `modules/convert/batch_convert.py`
+- [ ] Step 12: Wire Module 1 into `pipeline.py`
 
-- Both work on WellCAD v5.2. The "Python in v5.7" is WellCAD's *built-in* Python console — irrelevant here.
-- `pip install pywin32 pywinauto` — no other dependencies.
-- pywin32: fast and reliable (API-level). pywinauto: slower and fragile if vendor updates UI, but works on any app.
-- Recommended: **single `pipeline.py`** — pywinauto for Module 1, pywin32 for Module 2, tkinter for Phase 2 UI.
-
-Decision needed before building pipeline orchestrator.
+### Phase 4 — GUI
+- [ ] Step 13: `ui/launcher.py` — client selector, module toggles, run button, log viewer
 
 ---
 
 ## Open Questions
 
-1. **Module 1 vendor app:** What is the executable name? Does it have a CLI (command-line flags) or is it GUI-only?
-2. **Language:** VBScript pipeline or Python + pywin32?
-3. **Client list:** Which clients need different configs? What specifically differs per client?
-4. **Module independence:** Can Module 2 run against a pre-existing WCL, or does Module 1 always run first?
+1. **Module 1 vendor app:** exe name? CLI flags available, or GUI-only?
+2. **Client list:** which other clients, and what differs (templates, header mappings, formats)?
 
 ---
 
-## What Was Done So Far
+## History
 
-- Investigated all 3 original VBS scripts for issues
-- Refactored 001, 003, 004:
-  - Removed ~1500 lines of duplicated code
-  - Extracted shared functions (NonZeroMin, Max, InterpolateLogEnd, GetDeviationType,
-    RotateImages, DeleteLogsByLookup, SliceAllLogs, etc.)
-  - Fixed ATV LAS scan path bug (was scanning wrong folder)
-  - Replaced nested If chains with Select Case
-  - Removed dead commented-out code
-- Created `_lib.vbs` shared library (partial)
-- Created `C:\Project_Fatemah` folder with git remote → https://github.com/ZZZexin/Project-Fatemah.git
-
----
-
-## Next Steps (in order)
-
-1. Decide: VBScript pipeline vs Python + pywin32
-2. Answer open questions above (vendor app, client list)
-3. Build `clients/RTIO.ini` config structure
-4. Build `pipeline.vbs` (or `pipeline.py`) orchestrator
-5. Build Module 1 batch converter once vendor app details known
-6. Phase 2: simple UI (HTA or tkinter)
+| Date | What |
+|---|---|
+| 2026-06-12 | VBS scripts 001, 003, 004 reviewed and refactored |
+| 2026-06-12 | Project structure, language stack, and build plan designed |
+| 2026-06-12 | Folder structure scaffolded, PROJECT_NOTES.md committed to GitHub |
