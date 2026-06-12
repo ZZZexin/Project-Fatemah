@@ -40,7 +40,7 @@ Project_Fatemah/
 ├── 004__wcRTIOtv_any_orientation.vbs     ← Module 2 step 3 (refactored)
 │
 └── (future) ui/
-    └── launcher.hta or launcher.py       ← Phase 2 UI
+    └── launcher.py                       ← Phase 2 UI (tkinter)
 ```
 
 ---
@@ -79,11 +79,17 @@ suffix_mn = mn
 
 **VBScript path (current):** no new dependencies, but limited error handling and no good UI path.
 
-**Python + pywin32 path (recommended):**
-- `pip install pywin32` is the only dependency
-- `win32com.client.Dispatch("WellCAD.Application")` talks to the same COM API
-- Works on WellCAD v5.2 — the "Python in v5.7" is WellCAD's *built-in* console, not a COM requirement
-- Better logging, error handling, future tkinter UI
+**Python approach — two libraries, two jobs:**
+
+| Library | How it works | Used for |
+|---|---|---|
+| `pywin32` (win32com.client) | Calls WellCAD's COM object directly in code | Module 2 — replaces VBScript entirely, same API |
+| `pywinauto` | Drives any Windows app by clicking its actual UI | Module 1 — automates vendor OTV app if it has no CLI |
+
+- Both work on WellCAD v5.2. The "Python in v5.7" is WellCAD's *built-in* Python console — irrelevant here.
+- `pip install pywin32 pywinauto` — no other dependencies.
+- pywin32: fast and reliable (API-level). pywinauto: slower and fragile if vendor updates UI, but works on any app.
+- Recommended: **single `pipeline.py`** — pywinauto for Module 1, pywin32 for Module 2, tkinter for Phase 2 UI.
 
 Decision needed before building pipeline orchestrator.
 
