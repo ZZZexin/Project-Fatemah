@@ -50,18 +50,42 @@ Project_Fatemah/
 │
 ├── pipeline.py                        ← entry point — run this
 ├── PROJECT_NOTES.md                   ← this file
-├── .gitignore                         ← excludes logs/, __pycache__/, *.pyc
+├── .gitignore                         ← excludes logs/, .venv/, __pycache__/
+├── .venv/                             ← Python virtual environment (gitignored)
+│
+├── clients/                           ← one folder per client, fully self-contained
+│   ├── RTIO/
+│   │   ├── config.ini                 ← pipeline settings for RTIO
+│   │   └── templates/                 ← WellCAD .wdt and .ini files for RTIO
+│   │       ├── GEOPHYSICS IMPORTd2.wdt
+│   │       ├── RTIO_2_BHTV_OPTV_nsg.wdt
+│   │       ├── RTIO_2_BHTV_nsg.wdt
+│   │       ├── RTIO_2_OPTV_nsg.wdt
+│   │       ├── Template PWS - NSGAZI3.wdt
+│   │       ├── Template PWS - GAZI3.wdt
+│   │       ├── Template PWS - AZI3.wdt
+│   │       ├── Template PWS - NOLASDEV.wdt
+│   │       ├── MN_RotateConfig.ini
+│   │       ├── nsgAZI_RotateConfig.ini
+│   │       ├── gAZI_RotateConfig.ini
+│   │       ├── AZI_RotateConfig.ini
+│   │       ├── AZI_OBI_RotateConfig.ini
+│   │       ├── AZI_ABI_RotateConfig.ini
+│   │       ├── NormaliseImage_1D.ini
+│   │       ├── NormaliseImage_Static.ini
+│   │       ├── PWS_Lookup_DeleteTheseColumnsList_01.ini
+│   │       └── PWS_Lookup_DeleteForHIGHSIDE_List.ini
+│   └── ClientB/
+│       ├── config.ini
+│       └── templates/
 │
 ├── config/
-│   ├── default.ini                    ← fallback values for all clients
-│   └── clients/
-│       ├── RTIO.ini                   ← RTIO-specific overrides
-│       └── ClientB.ini
+│   └── default.ini                    ← fallback values inherited by all clients
 │
 ├── modules/
 │   ├── convert/                       ← Module 1: batch convert (pywinauto)
 │   │   ├── batch_convert.py           ← loops input folder, drives vendor app per file
-│   │   └── vendor_app.py             ← pywinauto wrapper: open→load→convert→close
+│   │   └── vendor_app.py              ← pywinauto wrapper: open→load→convert→close
 │   │
 │   ├── process/                       ← Module 2: WellCAD pipeline (pywin32)
 │   │   ├── import_data.py             ← LAS + OTV/ATV image import  (from script 001)
@@ -85,33 +109,12 @@ Project_Fatemah/
 │   ├── las_parser.py                  ← read ~Well and ~Params from LAS files
 │   └── logger.py                      ← timestamped log to file + console
 │
-├── templates/                         ← version-controlled WellCAD templates
-│   ├── shared/                        ← used by all clients
-│   │   ├── AutoBulkLoad.ini
-│   │   ├── HEDImport.ini
-│   │   ├── BMPImport.ini
-│   │   └── ConvertLogTo.ini
-│   └── clients/
-│       ├── RTIO/                      ← RTIO .wdt and .ini files
-│       │   ├── GEOPHYSICS IMPORTd2.wdt
-│       │   ├── RTIO_2_BHTV_OPTV_nsg.wdt
-│       │   ├── RTIO_2_BHTV_nsg.wdt
-│       │   ├── RTIO_2_OPTV_nsg.wdt
-│       │   ├── Template PWS - NSGAZI3.wdt
-│       │   ├── Template PWS - GAZI3.wdt
-│       │   ├── Template PWS - AZI3.wdt
-│       │   ├── Template PWS - NOLASDEV.wdt
-│       │   ├── MN_RotateConfig.ini
-│       │   ├── nsgAZI_RotateConfig.ini
-│       │   ├── gAZI_RotateConfig.ini
-│       │   ├── AZI_RotateConfig.ini
-│       │   ├── AZI_OBI_RotateConfig.ini
-│       │   ├── AZI_ABI_RotateConfig.ini
-│       │   ├── NormaliseImage_1D.ini
-│       │   ├── NormaliseImage_Static.ini
-│       │   ├── PWS_Lookup_DeleteTheseColumnsList_01.ini
-│       │   └── PWS_Lookup_DeleteForHIGHSIDE_List.ini
-│       └── ClientB/
+├── templates/
+│   └── shared/                        ← WellCAD templates used by all clients
+│       ├── AutoBulkLoad.ini
+│       ├── HEDImport.ini
+│       ├── BMPImport.ini
+│       └── ConvertLogTo.ini
 │
 ├── logs/                              ← runtime output — gitignored
 │
@@ -121,7 +124,7 @@ Project_Fatemah/
 
 ---
 
-## Client Config (config/clients/RTIO.ini)
+## Client Config (clients/RTIO/config.ini)
 
 ```ini
 [client]
@@ -130,7 +133,7 @@ company_display  = RIO TINTO IRON ORE
 country          = AUSTRALIA
 
 [paths]
-template_path        = templates/clients/RTIO
+template_path        = clients/RTIO/templates
 shared_template_path = templates/shared
 
 [module1]
@@ -158,7 +161,7 @@ suffix_mn = mn
 - [ ] Step 2: `lib/logger.py`
 - [ ] Step 3: `lib/las_parser.py`
 - [ ] Step 4: `lib/wellcad_helpers.py`
-- [ ] Step 5: `config/default.ini` + `config/clients/RTIO.ini`
+- [ ] Step 5: `config/default.ini` + `clients/RTIO/config.ini`
 
 ### Phase 2 — Module 2 (WellCAD pipeline)
 - [ ] Step 6: `modules/process/import_data.py`
