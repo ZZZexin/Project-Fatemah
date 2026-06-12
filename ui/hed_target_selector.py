@@ -39,6 +39,7 @@ OPTV_MARKERS = ("OPTV", "OTV", "OBI")
 BHTV_MARKERS = ("BHTV", "ATV", "ABI", "BTV")
 SELECTABLE_TYPES = ("OPTV", "BHTV")
 EMPTY_CHOICE = ""
+ALL_CHOICE = "ALL"
 
 
 def has_marker(path: Path, markers: tuple[str, ...]) -> bool:
@@ -70,6 +71,19 @@ def build_run_label(path: Path, hole: str, search_root: Path) -> str:
     stem = path.stem
     run_name = stem[len(hole) :].lstrip("_") if stem.upper().startswith(hole.upper()) else stem
     return run_name or stem
+
+
+def default_run_label(data_type: str, runs: list[HedRun]) -> str:
+    """Pick a sensible default run for each image type."""
+    if not runs:
+        return EMPTY_CHOICE
+
+    preferred_text = "in" if data_type == "OPTV" else "out"
+    for run in runs:
+        searchable = f"{run.label} {run.path.name}".lower()
+        if preferred_text in searchable:
+            return run.label
+    return runs[0].label
 
 
 def find_hed_runs(search_dir: Path) -> dict[str, dict[str, list[HedRun]]]:
@@ -128,12 +142,13 @@ class HedTargetSelector(tk.Tk):
     def __init__(self) -> None:
         super().__init__()
         self.title("HED Target Selector")
-        self.geometry("760x680")
-        self.minsize(620, 480)
+        self.geometry("1040x720")
+        self.minsize(860, 520)
 
         self.search_dir = tk.StringVar(value=str(DEFAULT_SEARCH_DIR))
         self.status = tk.StringVar(value="Choose a folder and scan for .hed files.")
         self.run_lookup: dict[str, dict[str, list[HedRun]]] = {}
+        self.include_holes: dict[str, tk.BooleanVar] = {}
         self.selected_labels: dict[tuple[str, str], tk.StringVar] = {}
         self.path_labels: dict[tuple[str, str], tk.StringVar] = {}
 
@@ -158,7 +173,9 @@ class HedTargetSelector(tk.Tk):
         actions = ttk.Frame(top)
         actions.grid(row=1, column=0, columnspan=4, pady=(10, 0), sticky="ew")
         ttk.Button(actions, text="Organize to sorted", command=self.organize_to_sorted).pack(side="left")
-        ttk.Button(actions, text="Save selections", command=self.save).pack(side="left")
+        ttk.Button(actions, text="Select all", command=self.select_all).pack(side="left", padx=(8, 0))
+        ttk.Button(actions, text="Deselect all", command=self.deselect_all).pack(side="left", padx=(8, 0))
+        ttk.Button(actions, text="Save selections", command=self.save).pack(side="left", padx=(8, 0))
         ttk.Button(actions, text="Copy paths", command=self.copy_paths).pack(side="left", padx=(8, 0))
         ttk.Button(actions, text="Clear", command=self.clear_rows).pack(side="left", padx=(8, 0))
         ttk.Label(actions, textvariable=self.status).pack(side="left", padx=(18, 0))
@@ -213,6 +230,7 @@ class HedTargetSelector(tk.Tk):
     def clear_rows(self) -> None:
         for child in self.table.inner.winfo_children():
             child.destroy()
+        self.include_holes.clear()
         self.selected_labels.clear()
         self.path_labels.clear()
         self.status.set("Cleared the current list.")
@@ -220,22 +238,28 @@ class HedTargetSelector(tk.Tk):
     def render_rows(self) -> None:
         self.clear_rows()
 
-        headings = ("Hole", "OPTV / OTV / OBI", "BHTV / ATV / ABI / BTV")
+        headings = ("Include", "Hole", "OPTV / OTV / OBI", "BHTV / ATV / ABI / BTV")
         for column, text in enumerate(headings):
             label = ttk.Label(self.table.inner, text=text, font=("", 10, "bold"))
             label.grid(row=0, column=column, sticky="ew", padx=6, pady=(0, 6))
 
-        self.table.inner.columnconfigure(0, weight=0, minsize=140)
-        self.table.inner.columnconfigure(1, weight=1, minsize=260)
+        self.table.inner.columnconfigure(0, weight=0, minsize=70)
+        self.table.inner.columnconfigure(1, weight=0, minsize=140)
         self.table.inner.columnconfigure(2, weight=1, minsize=260)
+        self.table.inner.columnconfigure(3, weight=1, minsize=260)
 
         for row_index, (hole, type_runs) in enumerate(self.run_lookup.items(), start=1):
-            ttk.Label(self.table.inner, text=hole).grid(
+            include = tk.BooleanVar(value=True)
+            self.include_holes[hole] = include
+            ttk.Checkbutton(self.table.inner, variable=include).grid(
                 row=row_index, column=0, sticky="w", padx=6, pady=4
             )
+            ttk.Label(self.table.inner, text=hole).grid(
+                row=row_index, column=1, sticky="w", padx=6, pady=4
+            )
 
-            self.render_selector(row_index, hole, "OPTV", type_runs.get("OPTV", []), 1)
-            self.render_selector(row_index, hole, "BHTV", type_runs.get("BHTV", []), 2)
+            self.render_selector(row_index, hole, "OPTV", type_runs.get("OPTV", []), 2)
+            self.render_selector(row_index, hole, "BHTV", type_runs.get("BHTV", []), 3)
 
     def render_selector(
         self,
@@ -245,16 +269,19 @@ class HedTargetSelector(tk.Tk):
         runs: list[HedRun],
         combo_column: int,
     ) -> None:
-        selected = tk.StringVar(value=runs[0].label if runs else EMPTY_CHOICE)
-        selected_path = tk.StringVar(value=str(runs[0].path) if runs else "")
+        choices = [*[run.label for run in runs], ALL_CHOICE] if runs else []
+        selected = tk.StringVar(value=default_run_label(data_type, runs))
+        selected_path = tk.StringVar(value="")
         key = (hole, data_type)
         self.selected_labels[key] = selected
         self.path_labels[key] = selected_path
+        if runs:
+            self.after_idle(lambda hole_name=hole, run_type=data_type: self.update_target_path(hole_name, run_type))
 
         combo = ttk.Combobox(
             self.table.inner,
             textvariable=selected,
-            values=[run.label for run in runs],
+            values=choices,
             state="readonly" if runs else "disabled",
             width=28,
         )
@@ -269,25 +296,52 @@ class HedTargetSelector(tk.Tk):
     def update_target_path(self, hole: str, data_type: str) -> None:
         key = (hole, data_type)
         selected = self.selected_labels[key].get()
+        if selected == ALL_CHOICE:
+            self.path_labels[key].set(ALL_CHOICE)
+            return
         for run in self.run_lookup.get(hole, {}).get(data_type, []):
             if run.label == selected:
                 self.path_labels[key].set(str(run.path))
                 return
         self.path_labels[key].set("")
 
+    def selected_runs_for(self, hole: str, data_type: str) -> list[HedRun]:
+        key = (hole, data_type)
+        selected = self.selected_labels[key].get()
+        runs = self.run_lookup.get(hole, {}).get(data_type, [])
+        if selected == ALL_CHOICE:
+            return runs
+        return [run for run in runs if run.label == selected]
+
+    def select_all(self) -> None:
+        for include in self.include_holes.values():
+            include.set(True)
+        self.status.set(f"Selected all {len(self.include_holes)} holes.")
+
+    def deselect_all(self) -> None:
+        for include in self.include_holes.values():
+            include.set(False)
+        self.status.set("Deselected all holes.")
+
     def get_selected_targets(self) -> list[dict[str, str]]:
         targets: list[dict[str, str]] = []
         for hole in sorted(self.run_lookup):
-            row: dict[str, str] = {"hole": hole}
+            include = self.include_holes.get(hole)
+            if include is None or not include.get():
+                continue
             for data_type in SELECTABLE_TYPES:
-                key = (hole, data_type)
                 self.update_target_path(hole, data_type)
-                label = self.selected_labels[key].get()
-                path = self.path_labels[key].get()
-                row[f"{data_type.lower()}_run"] = label.split("    (", 1)[0] if label else ""
-                row[f"{data_type.lower()}_path"] = path
-            if row.get("optv_path") or row.get("bhtv_path"):
-                targets.append(row)
+                for run in self.selected_runs_for(hole, data_type):
+                    targets.append(
+                        {
+                            "hole": hole,
+                            "data_type": data_type,
+                            "run": run.label,
+                            "parent_directory": str(run.path.parent),
+                            "file_name": run.path.name,
+                            "path": str(run.path),
+                        }
+                    )
         return targets
 
     def save(self) -> None:
@@ -302,7 +356,7 @@ class HedTargetSelector(tk.Tk):
         with DEFAULT_CSV_OUTPUT.open("w", newline="", encoding="utf-8") as csv_file:
             writer = csv.DictWriter(
                 csv_file,
-                fieldnames=["hole", "optv_run", "optv_path", "bhtv_run", "bhtv_path"],
+                fieldnames=["hole", "data_type", "run", "parent_directory", "file_name", "path"],
             )
             writer.writeheader()
             writer.writerows(targets)
@@ -316,7 +370,9 @@ class HedTargetSelector(tk.Tk):
     def copy_paths(self) -> None:
         paths = []
         for target in self.get_selected_targets():
-            paths.extend(path for path in (target.get("optv_path"), target.get("bhtv_path")) if path)
+            path = target.get("path")
+            if path:
+                paths.append(path)
         if not paths:
             messagebox.showwarning("Nothing to copy", "Scan first and select at least one run.")
             return
