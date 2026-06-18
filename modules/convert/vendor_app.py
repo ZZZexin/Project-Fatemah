@@ -34,7 +34,7 @@ def _load_hed(hed_path: str):
 
 def _ensure_checked(parent_window, title: str):
     cb = parent_window.child_window(title=title, class_name="Button")
-    cb.wait("exists enabled", timeout=10)
+    cb.wait("exists enabled", timeout=2)
     if cb.get_check_state() == 0:
         cb.click_input()
 
@@ -107,9 +107,9 @@ def _poll_handle_dialog():
 
 
 def _has_lgx_pass(dialog) -> bool:
-    """True if any descendant shows 'Creating LGX Pass' AND 'wait' — actively exporting."""
+    """True if any direct child shows 'Creating LGX Pass' AND 'wait' — actively exporting."""
     try:
-        for ctrl in dialog.descendants():
+        for ctrl in dialog.children():
             try:
                 t = ctrl.window_text()
                 if "Creating LGX Pass" in t and "wait" in t.lower():
@@ -125,16 +125,21 @@ def _wait_picture_complete(dialog, timeout: float = 300):
     """
     Wait for picture/LGX export to finish using a two-state machine.
 
-    status 0→1 when 'Creating LGX Pass...wait...' appears.
+    status 0→1 when 'Creating LGX Pass...wait...' appears in a direct child.
     status 1→0 (done) when it disappears and is still gone after 0.1 s.
     If it never appears within 15 s, assumes export was instant and returns.
+    _poll_handle_dialog is called every 5th iteration (~0.5 s) to catch errors.
     """
     deadline = time.time() + timeout
     start_deadline = time.time() + 15
     status = 0
+    poll_counter = 0
 
     while time.time() < deadline:
-        _poll_handle_dialog()
+        poll_counter += 1
+        if poll_counter % 5 == 0:
+            _poll_handle_dialog()
+
         found = _has_lgx_pass(dialog)
 
         if found:
@@ -150,11 +155,11 @@ def _wait_picture_complete(dialog, timeout: float = 300):
 
 
 def _wait_las_complete(dialog, timeout: float = 120):
-    """Wait for LAS export to finish. Returns as soon as 'File migred' appears."""
+    """Wait for LAS export to finish. Returns as soon as 'File migred' appears in a direct child."""
     deadline = time.time() + timeout
     while time.time() < deadline:
         try:
-            for ctrl in dialog.descendants():
+            for ctrl in dialog.children():
                 try:
                     if "File migred" in ctrl.window_text():
                         return
@@ -194,7 +199,6 @@ def export_picture_file(dialog, hed_path: str):
     dialog.descendants()[3].click_input()   # browse button
     _load_hed(hed_path)
 
-    dialog.wait("exists visible ready", timeout=10)
     dialog.set_focus()
 
     for btn_title in ("True color", "Bicubic"):
@@ -210,7 +214,6 @@ def export_picture_file(dialog, hed_path: str):
 
     dialog.child_window(title="&Export", class_name="Button").click_input()
 
-    # Handle optional replace dialog or immediate error (1 s is enough)
     _handle_dialog(timeout=1.0)
 
     _wait_picture_complete(dialog, timeout=300)
@@ -248,7 +251,7 @@ def export_optv_las_file(dialog, hed_path: str):
     result = _handle_dialog(timeout=1.0)
     if result == "skipped":
         # File already existed: vendor shows a second popup after the No click
-        _handle_dialog(timeout=5.0)
+        _handle_dialog(timeout=2.0)
     else:
         _wait_las_complete(dialog, timeout=120)
 
@@ -283,7 +286,10 @@ def export_bhtv_las_file(dialog, hed_path: str):
     dialog.child_window(title="&Start", class_name="Button").click_input()
 
     # Replace dialog in BHTV uses title "OPTV" (vendor quirk)
-    if _handle_dialog(timeout=1.0) != "skipped":
+    result = _handle_dialog(timeout=1.0)
+    if result == "skipped":
+        _handle_dialog(timeout=2.0)
+    else:
         _wait_las_complete(dialog, timeout=120)
 
 

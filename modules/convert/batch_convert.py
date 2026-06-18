@@ -9,6 +9,7 @@ Usage (from project root):
 import json
 import logging
 import sys
+import threading
 import time
 from datetime import datetime
 from pathlib import Path
@@ -194,10 +195,21 @@ def run_all(targets_json_path: str = "config/selected_hed_targets.json", stop_ev
     log.info("Loaded %d OPTV, %d BHTV targets from %s", len(optv), len(bhtv), targets_json_path)
 
     all_results = {}
+
+    # OPTV and BHTV are independent processes — run them in parallel.
+    threads = {}
     if optv:
-        all_results["OPTV"] = run_optv_batch(optv, stop_event)
-    if not (stop_event and stop_event.is_set()) and bhtv:
-        all_results["BHTV"] = run_bhtv_batch(bhtv, stop_event)
+        t = threading.Thread(target=lambda: all_results.update(
+            {"OPTV": run_optv_batch(optv, stop_event)}), daemon=True)
+        threads["OPTV"] = t
+        t.start()
+    if bhtv:
+        t = threading.Thread(target=lambda: all_results.update(
+            {"BHTV": run_bhtv_batch(bhtv, stop_event)}), daemon=True)
+        threads["BHTV"] = t
+        t.start()
+    for t in threads.values():
+        t.join()
 
     log.info("=== SUMMARY ===")
     for dtype, results in all_results.items():
