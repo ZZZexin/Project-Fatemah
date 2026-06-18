@@ -67,10 +67,8 @@ def infer_hole_name(path: Path, _search_root: Path) -> str:
 
 
 def build_run_label(path: Path, hole: str, search_root: Path) -> str:
-    """Build a compact dropdown label from the filename only."""
-    stem = path.stem
-    run_name = stem[len(hole) :].lstrip("_") if stem.upper().startswith(hole.upper()) else stem
-    return run_name or stem
+    """Use the full .hed filename as the label — unambiguous and clear."""
+    return path.name
 
 
 def default_run_label(data_type: str, runs: list[HedRun]) -> str:
@@ -88,6 +86,7 @@ def default_run_label(data_type: str, runs: list[HedRun]) -> str:
 
 def find_hed_runs(search_dir: Path) -> dict[str, dict[str, list[HedRun]]]:
     runs_by_hole: dict[str, dict[str, list[HedRun]]] = {}
+    seen: set[str] = set()  # "hole:type:filename" — dedup copies in organised subdirs
     for path in sorted(search_dir.rglob("*")):
         if not path.is_file() or path.suffix.lower() != ".hed":
             continue
@@ -97,6 +96,11 @@ def find_hed_runs(search_dir: Path) -> dict[str, dict[str, list[HedRun]]]:
             continue
 
         hole = infer_hole_name(path, search_dir)
+        dedup_key = f"{hole}:{data_type}:{path.name}"
+        if dedup_key in seen:
+            continue
+        seen.add(dedup_key)
+
         run = HedRun(
             hole=hole,
             data_type=data_type,

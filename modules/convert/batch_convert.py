@@ -16,7 +16,11 @@ from pathlib import Path
 import psutil
 from pywinauto.application import Application
 
-from modules.convert.vendor_app import export_optv_picture, export_optv_las, export_bhtv_las
+from modules.convert.vendor_app import (
+    open_picture_dialog, export_picture_file, close_picture_dialog,
+    open_optv_las_dialog, export_optv_las_file, close_optv_las_dialog,
+    open_bhtv_las_dialog, export_bhtv_las_file, close_bhtv_las_dialog,
+)
 
 OPTV_PATH = r"C:\Electromind\OPTV Logger\OPTV.exe"
 BHTV_PATH = r"C:\Electromind\BHTV Logger\BHTV.exe"
@@ -73,39 +77,54 @@ def _start_bhtv():
 
 
 # ---------------------------------------------------------------------------
-# Generic batch loop
+# Generic batch loop — dialog opened once, reused for every file
 # ---------------------------------------------------------------------------
 
-def _run_loop(entries, export_fn, app_start_fn, kill_path, export_label):
+def _run_loop(entries, app_start_fn, open_dialog_fn, export_fn, close_dialog_fn,
+              kill_path, export_label, stop_event=None):
     """
-    Iterate entries, call export_fn(main, hed_path) for each.
-    On failure: log, restart app, continue with next entry.
-    Returns dict of {hole: "ok" | "FAILED: ..." | "SKIPPED: ..."}.
+    Open dialog once, iterate entries calling export_fn(dialog, hed_path),
+    close dialog, kill app.
+    On per-file failure: log, restart app + re-open dialog, continue next entry.
+    stop_event (threading.Event): checked before each file.
+    Returns {hole: "ok" | "FAILED: ..." | "SKIPPED: ..."}.
     """
     results = {}
     main = app_start_fn()
+    dialog = open_dialog_fn(main)
 
     for i, entry in enumerate(entries):
+        if stop_event and stop_event.is_set():
+            log.info("Stop requested — skipping remaining %d entries.", len(entries) - i)
+            for e in entries[i:]:
+                results[e["hole"]] = "SKIPPED: stopped by user"
+            break
+
         hole = entry["hole"]
         hed_path = entry["path"]
         try:
             log.info("[%s] %s — start", hole, export_label)
-            export_fn(main, hed_path)
+            export_fn(dialog, hed_path)
             results[hole] = "ok"
             log.info("[%s] %s — done", hole, export_label)
         except Exception as exc:
             results[hole] = f"FAILED: {exc}"
-            log.error("[%s] %s — failed: %s  →  restarting app", hole, export_label, exc)
+            log.error("[%s] %s — failed: %s  ->  restarting app", hole, export_label, exc)
             _kill_app(kill_path)
             time.sleep(2)
             try:
                 main = app_start_fn()
+                dialog = open_dialog_fn(main)
             except Exception as restart_exc:
-                log.error("App restart failed: %s  →  aborting remaining entries", restart_exc)
-                for entry in entries[i + 1:]:
-                    results[entry["hole"]] = "SKIPPED: app restart failed"
+                log.error("App restart failed: %s  ->  aborting remaining entries", restart_exc)
+                for e in entries[i + 1:]:
+                    results[e["hole"]] = "SKIPPED: app restart failed"
                 break
 
+    try:
+        close_dialog_fn(dialog)
+    except Exception:
+        pass
     _kill_app(kill_path)
     return results
 
@@ -114,22 +133,38 @@ def _run_loop(entries, export_fn, app_start_fn, kill_path, export_label):
 # Public batch runners
 # ---------------------------------------------------------------------------
 
-def run_optv_batch(entries: list) -> dict:
+def run_optv_batch(entries: list, stop_event=None) -> dict:
     """Picture loop then LAS loop for all OPTV entries."""
     log.info("=== OPTV Picture export: %d holes ===", len(entries))
-    picture = _run_loop(entries, export_optv_picture, _start_optv, OPTV_PATH, "picture")
+    picture = _run_loop(
+        entries, _start_optv,
+        open_picture_dialog, export_picture_file, close_picture_dialog,
+        OPTV_PATH, "picture", stop_event,
+    )
+
+    if stop_event and stop_event.is_set():
+        holes = {e["hole"] for e in entries}
+        return {hole: {"picture": picture.get(hole), "las": "SKIPPED: stopped by user"} for hole in holes}
 
     log.info("=== OPTV LAS export: %d holes ===", len(entries))
-    las = _run_loop(entries, export_optv_las, _start_optv, OPTV_PATH, "las")
+    las = _run_loop(
+        entries, _start_optv,
+        open_optv_las_dialog, export_optv_las_file, close_optv_las_dialog,
+        OPTV_PATH, "las", stop_event,
+    )
 
     holes = {e["hole"] for e in entries}
     return {hole: {"picture": picture.get(hole), "las": las.get(hole)} for hole in holes}
 
 
-def run_bhtv_batch(entries: list) -> dict:
+def run_bhtv_batch(entries: list, stop_event=None) -> dict:
     """LAS loop for all BHTV entries."""
     log.info("=== BHTV LAS export: %d holes ===", len(entries))
-    las = _run_loop(entries, export_bhtv_las, _start_bhtv, BHTV_PATH, "las")
+    las = _run_loop(
+        entries, _start_bhtv,
+        open_bhtv_las_dialog, export_bhtv_las_file, close_bhtv_las_dialog,
+        BHTV_PATH, "las", stop_event,
+    )
     return {hole: {"las": result} for hole, result in las.items()}
 
 
@@ -137,7 +172,7 @@ def run_bhtv_batch(entries: list) -> dict:
 # Entry point
 # ---------------------------------------------------------------------------
 
-def run_all(targets_json_path: str = "config/selected_hed_targets.json"):
+def run_all(targets_json_path: str = "config/selected_hed_targets.json", stop_event=None):
     log_dir = Path("logs")
     log_dir.mkdir(exist_ok=True)
     log_file = log_dir / f"convert_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
@@ -160,23 +195,22 @@ def run_all(targets_json_path: str = "config/selected_hed_targets.json"):
 
     all_results = {}
     if optv:
-        all_results["OPTV"] = run_optv_batch(optv)
-    if bhtv:
-        all_results["BHTV"] = run_bhtv_batch(bhtv)
+        all_results["OPTV"] = run_optv_batch(optv, stop_event)
+    if not (stop_event and stop_event.is_set()) and bhtv:
+        all_results["BHTV"] = run_bhtv_batch(bhtv, stop_event)
 
-    # Summary
     log.info("=== SUMMARY ===")
     for dtype, results in all_results.items():
         for hole, status in results.items():
             for export_type, result in status.items():
                 tag = "OK  " if result == "ok" else "FAIL"
-                log.info("  %s  [%s] %-20s %s  %s", tag, dtype, hole, export_type, "" if result == "ok" else result)
+                log.info("  %s  [%s] %-20s %s  %s", tag, dtype, hole, export_type,
+                         "" if result == "ok" else result)
 
     log.info("Log saved to %s", log_file)
     return all_results
 
 
 if __name__ == "__main__":
-    # Allow running as: python -m modules.convert.batch_convert [path/to/targets.json]
     json_path = sys.argv[1] if len(sys.argv) > 1 else "config/selected_hed_targets.json"
     run_all(json_path)

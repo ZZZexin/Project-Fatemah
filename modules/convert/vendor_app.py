@@ -1,3 +1,9 @@
+"""Per-file export helpers for OPTV and BHTV vendor software.
+
+Design: dialogs are opened ONCE before the batch loop and closed after.
+Each export_*_file() function loads a new .hed into the already-open dialog.
+"""
+
 from pywinauto import Desktop
 import pyperclip
 import time
@@ -5,7 +11,12 @@ import time
 LAS_TARGETS = ["Inclination", "Azimuth", "Total Mag.", "Natural Gamma"]
 
 
+# ---------------------------------------------------------------------------
+# Shared low-level helpers
+# ---------------------------------------------------------------------------
+
 def _load_hed(hed_path: str):
+    """Paste hed_path into the currently open 'Open' file dialog and confirm."""
     open_dialog = Desktop(backend="win32").window(title="Open", class_name="#32770")
     open_dialog.wait("exists visible ready", timeout=10)
     open_dialog.set_focus()
@@ -26,7 +37,7 @@ def _ensure_checked(parent_window, title: str):
 
 
 def _try_replace_dialog(app_title: str, timeout: float = 3.0) -> bool:
-    """Click No on the 'file already exists — replace?' dialog if it appears."""
+    """Click No on 'file already exists — replace?' dialog if it appears."""
     try:
         dlg = Desktop(backend="win32").window(title=app_title, class_name="#32770")
         dlg.wait("exists visible ready", timeout=timeout)
@@ -48,23 +59,36 @@ def _click_ok_dialog(app_title: str, timeout: float = 60.0):
     ok_btn.click_input()
 
 
-def export_optv_picture(main, hed_path: str):
-    """Picture/LGX export for one OPTV .hed file. App must already be open."""
+def _open_export_menu(main, shortcut_key: str):
+    """Alt+F → x (Export) → shortcut_key to open the correct export dialog."""
     main.set_focus()
     main.type_keys("%f")
     time.sleep(0.1)
     main.type_keys("x")
     time.sleep(0.1)
-    main.type_keys("p")
+    main.type_keys(shortcut_key)
     time.sleep(0.1)
 
+
+# ---------------------------------------------------------------------------
+# Picture export  (OPTV only)
+# ---------------------------------------------------------------------------
+
+def open_picture_dialog(main):
+    """Navigate menu and return the open Picture export dialog."""
+    _open_export_menu(main, "p")
     dialog = Desktop(backend="win32").window(title_re=".*Picture export.*")
-    dialog.wait("visible", timeout=10)
+    dialog.wait("exists visible ready", timeout=10)
     dialog.set_focus()
-    dialog.descendants()[0].click_input()
+    return dialog
+
+
+def export_picture_file(dialog, hed_path: str):
+    """Load one .hed and export picture/LGX. Dialog must already be open."""
+    dialog.descendants()[3].click_input()   # browse button (index confirmed by v2)
     _load_hed(hed_path)
 
-    dialog = Desktop(backend="win32").window(title="Picture export", class_name="#32770")
+    # Re-focus dialog after Open dialog closes
     dialog.wait("exists visible ready", timeout=10)
     dialog.set_focus()
 
@@ -83,62 +107,76 @@ def export_optv_picture(main, hed_path: str):
     export_btn.click_input()
 
     _try_replace_dialog("OPTV", timeout=3.0)
-    # Button re-enables when dialog is ready again (either after skip or after actual export)
+    # Button re-enables when export finishes (or was skipped)
     export_btn.wait("enabled", timeout=120)
 
+
+def close_picture_dialog(dialog):
     dialog.child_window(title="&Cancel", class_name="Button").click_input()
 
 
-def export_optv_las(main, hed_path: str):
-    """LAS export for one OPTV .hed file. App must already be open."""
-    main.set_focus()
-    main.type_keys("%f")
-    time.sleep(0.1)
-    main.type_keys("x")
-    time.sleep(0.1)
-    main.type_keys("l")
-    time.sleep(0.1)
+# ---------------------------------------------------------------------------
+# LAS export — OPTV
+# ---------------------------------------------------------------------------
 
-    las_dialog = Desktop(backend="win32").window(
+def open_optv_las_dialog(main):
+    """Navigate menu and return the open LAS export dialog for OPTV."""
+    _open_export_menu(main, "l")
+    dialog = Desktop(backend="win32").window(
         title="LAS 2.0 exportation for OPTV", class_name="#32770"
     )
-    las_dialog.descendants()[3].click_input()
+    dialog.wait("exists visible ready", timeout=10)
+    dialog.set_focus()
+    return dialog
+
+
+def export_optv_las_file(dialog, hed_path: str):
+    """Load one .hed and export LAS. Dialog must already be open."""
+    dialog.descendants()[3].click_input()
     _load_hed(hed_path)
 
     for t in LAS_TARGETS:
-        _ensure_checked(las_dialog, t)
+        _ensure_checked(dialog, t)
 
-    las_dialog.child_window(title="&Start", class_name="Button").click_input()
+    dialog.child_window(title="&Start", class_name="Button").click_input()
 
     _try_replace_dialog("OPTV", timeout=3.0)
     _click_ok_dialog("OPTV", timeout=60)
 
-    las_dialog.child_window(title="&Close", class_name="Button").click_input()
+
+def close_optv_las_dialog(dialog):
+    dialog.child_window(title="&Close", class_name="Button").click_input()
 
 
-def export_bhtv_las(main, hed_path: str):
-    """LAS export for one BHTV .hed file. App must already be open."""
-    main.set_focus()
-    main.type_keys("%f")
-    time.sleep(0.1)
-    main.type_keys("x")
-    time.sleep(0.1)
-    main.type_keys("l")
-    time.sleep(0.1)
+# ---------------------------------------------------------------------------
+# LAS export — BHTV
+# ---------------------------------------------------------------------------
 
-    las_dialog = Desktop(backend="win32").window(
+def open_bhtv_las_dialog(main):
+    """Navigate menu and return the open LAS export dialog for BHTV."""
+    _open_export_menu(main, "l")
+    dialog = Desktop(backend="win32").window(
         title="LAS 2.0 exportation for BHTV", class_name="#32770"
     )
-    las_dialog.descendants()[3].click_input()
+    dialog.wait("exists visible ready", timeout=10)
+    dialog.set_focus()
+    return dialog
+
+
+def export_bhtv_las_file(dialog, hed_path: str):
+    """Load one .hed and export LAS. Dialog must already be open."""
+    dialog.descendants()[3].click_input()
     _load_hed(hed_path)
 
     for t in LAS_TARGETS:
-        _ensure_checked(las_dialog, t)
+        _ensure_checked(dialog, t)
 
-    las_dialog.child_window(title="&Start", class_name="Button").click_input()
+    dialog.child_window(title="&Start", class_name="Button").click_input()
 
-    # Note: replace dialog in BHTV app has title "OPTV" (vendor quirk from initial_code)
+    # Replace dialog in BHTV app has title "OPTV" (vendor quirk)
     _try_replace_dialog("OPTV", timeout=3.0)
     _click_ok_dialog("BHTV", timeout=60)
 
-    las_dialog.child_window(title="&Close", class_name="Button").click_input()
+
+def close_bhtv_las_dialog(dialog):
+    dialog.child_window(title="&Close", class_name="Button").click_input()
