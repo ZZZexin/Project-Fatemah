@@ -130,7 +130,8 @@ class ScrollableFrame(ttk.Frame):
 
         self.inner.bind("<Configure>", self._update_scroll_region)
         self.canvas.bind("<Configure>", self._resize_inner)
-        self.canvas.bind_all("<MouseWheel>", self._on_mousewheel)
+        self.canvas.bind("<Enter>", self._on_enter)
+        self.canvas.bind("<Leave>", self._on_leave)
 
     def _update_scroll_region(self, _event: tk.Event) -> None:
         self.canvas.configure(scrollregion=self.canvas.bbox("all"))
@@ -140,6 +141,12 @@ class ScrollableFrame(ttk.Frame):
 
     def _on_mousewheel(self, event: tk.Event) -> None:
         self.canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+
+    def _on_enter(self, _event: tk.Event) -> None:
+        self.canvas.bind_all("<MouseWheel>", self._on_mousewheel)
+
+    def _on_leave(self, _event: tk.Event) -> None:
+        self.canvas.unbind_all("<MouseWheel>")
 
 
 class HedTargetSelector(tk.Tk):

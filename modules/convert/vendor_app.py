@@ -2,16 +2,29 @@
 
 Design: dialogs are opened ONCE before the batch loop and closed after.
 Each export_*_file() function loads a new .hed into the already-open dialog.
+All vendor windows are moved off-screen so they don't clutter the desktop.
+click() is used instead of click_input() — sends BM_CLICK directly to the
+handle and works on off-screen windows without moving the mouse cursor.
 """
 
 from __future__ import annotations
 
+import ctypes
 import time
 
 import pyperclip
 from pywinauto import Desktop
 
 LAS_TARGETS = ["Inclination", "Azimuth", "Total Mag.", "Natural Gamma"]
+
+_SWP_NOSIZE   = 0x0001
+_SWP_NOZORDER = 0x0004
+
+
+def _move_offscreen(hwnd: int) -> None:
+    """Move a window 10 000 px off the right edge — keeps it interactive but hidden."""
+    ctypes.windll.user32.SetWindowPos(
+        hwnd, 0, 10000, 0, 0, 0, _SWP_NOSIZE | _SWP_NOZORDER)
 
 
 # ---------------------------------------------------------------------------
@@ -22,6 +35,7 @@ def _load_hed(hed_path: str):
     """Paste hed_path into the open 'Open' file dialog and confirm."""
     open_dialog = Desktop(backend="win32").window(title="Open", class_name="#32770")
     open_dialog.wait("exists visible ready", timeout=10)
+    _move_offscreen(open_dialog.handle)
     open_dialog.set_focus()
     pyperclip.copy(hed_path)
     open_dialog.type_keys("%n")
@@ -36,7 +50,7 @@ def _ensure_checked(parent_window, title: str):
     cb = parent_window.child_window(title=title, class_name="Button")
     cb.wait("exists enabled", timeout=2)
     if cb.get_check_state() == 0:
-        cb.click_input()
+        cb.click()
 
 
 def _handle_dialog(timeout: float = 1.0) -> str:
@@ -50,6 +64,7 @@ def _handle_dialog(timeout: float = 1.0) -> str:
         try:
             dlg = Desktop(backend="win32").window(title=title, class_name="#32770")
             dlg.wait("exists visible ready", timeout=timeout)
+            _move_offscreen(dlg.handle)
             dlg.set_focus()
         except Exception:
             continue
@@ -57,7 +72,7 @@ def _handle_dialog(timeout: float = 1.0) -> str:
         try:
             no_btn = dlg.child_window(title_re=".*No.*", class_name="Button")
             no_btn.wait("enabled", timeout=1)
-            no_btn.click_input()
+            no_btn.click()
             return "skipped"
         except Exception:
             pass
@@ -65,7 +80,7 @@ def _handle_dialog(timeout: float = 1.0) -> str:
         try:
             ok_btn = dlg.child_window(title_re=".*OK.*", class_name="Button")
             ok_btn.wait("enabled", timeout=1)
-            ok_btn.click_input()
+            ok_btn.click()
             return "ok"
         except Exception:
             pass
@@ -83,6 +98,7 @@ def _poll_handle_dialog():
             dlg = Desktop(backend="win32").window(title=title, class_name="#32770")
             if not dlg.exists():
                 continue
+            _move_offscreen(dlg.handle)
             dlg.set_focus()
         except Exception:
             continue
@@ -90,7 +106,7 @@ def _poll_handle_dialog():
         try:
             no_btn = dlg.child_window(title_re=".*No.*", class_name="Button")
             if no_btn.exists():
-                no_btn.click_input()
+                no_btn.click()
                 return "skipped"
         except Exception:
             pass
@@ -98,7 +114,7 @@ def _poll_handle_dialog():
         try:
             ok_btn = dlg.child_window(title_re=".*OK.*", class_name="Button")
             if ok_btn.exists():
-                ok_btn.click_input()
+                ok_btn.click()
                 return "ok"
         except Exception:
             pass
@@ -186,17 +202,18 @@ def _open_export_menu(main, shortcut_key: str):
 # ---------------------------------------------------------------------------
 
 def open_picture_dialog(main):
-    """Navigate menu and return the open Picture export dialog."""
+    """Navigate menu and return the open Picture export dialog (moved off-screen)."""
     _open_export_menu(main, "p")
     dialog = Desktop(backend="win32").window(title_re=".*Picture export.*")
     dialog.wait("exists visible ready", timeout=10)
+    _move_offscreen(dialog.handle)
     dialog.set_focus()
     return dialog
 
 
 def export_picture_file(dialog, hed_path: str):
     """Load one .hed and export picture/LGX. Dialog must already be open."""
-    dialog.descendants()[3].click_input()   # browse button
+    dialog.descendants()[3].click()   # browse button
     _load_hed(hed_path)
 
     dialog.set_focus()
@@ -204,15 +221,15 @@ def export_picture_file(dialog, hed_path: str):
     for btn_title in ("True color", "Bicubic"):
         btn = dialog.child_window(title=btn_title, class_name="Button")
         if btn.get_check_state() == 0:
-            btn.click_input()
+            btn.click()
 
     lgx_cb = dialog.child_window(title="LGX Format", class_name="Button")
     lgx_cb.wait("enabled", timeout=10)
     if lgx_cb.get_check_state() == 0:
-        lgx_cb.click_input()
+        lgx_cb.click()
     time.sleep(0.1)
 
-    dialog.child_window(title="&Export", class_name="Button").click_input()
+    dialog.child_window(title="&Export", class_name="Button").click()
 
     _handle_dialog(timeout=1.0)
 
@@ -220,7 +237,7 @@ def export_picture_file(dialog, hed_path: str):
 
 
 def close_picture_dialog(dialog):
-    dialog.child_window(title="&Cancel", class_name="Button").click_input()
+    dialog.child_window(title="&Cancel", class_name="Button").click()
 
 
 # ---------------------------------------------------------------------------
@@ -228,36 +245,36 @@ def close_picture_dialog(dialog):
 # ---------------------------------------------------------------------------
 
 def open_optv_las_dialog(main):
-    """Navigate menu and return the open LAS export dialog for OPTV."""
+    """Navigate menu and return the open LAS export dialog for OPTV (moved off-screen)."""
     _open_export_menu(main, "l")
     dialog = Desktop(backend="win32").window(
         title="LAS 2.0 exportation for OPTV", class_name="#32770"
     )
     dialog.wait("exists visible ready", timeout=10)
+    _move_offscreen(dialog.handle)
     dialog.set_focus()
     return dialog
 
 
 def export_optv_las_file(dialog, hed_path: str):
     """Load one .hed and export LAS. Dialog must already be open."""
-    dialog.descendants()[3].click_input()
+    dialog.descendants()[3].click()
     _load_hed(hed_path)
 
     for t in LAS_TARGETS:
         _ensure_checked(dialog, t)
 
-    dialog.child_window(title="&Start", class_name="Button").click_input()
+    dialog.child_window(title="&Start", class_name="Button").click()
 
     result = _handle_dialog(timeout=1.0)
     if result == "skipped":
-        # File already existed: vendor shows a second popup after the No click
         _handle_dialog(timeout=2.0)
     else:
         _wait_las_complete(dialog, timeout=120)
 
 
 def close_optv_las_dialog(dialog):
-    dialog.child_window(title="&Close", class_name="Button").click_input()
+    dialog.child_window(title="&Close", class_name="Button").click()
 
 
 # ---------------------------------------------------------------------------
@@ -265,27 +282,27 @@ def close_optv_las_dialog(dialog):
 # ---------------------------------------------------------------------------
 
 def open_bhtv_las_dialog(main):
-    """Navigate menu and return the open LAS export dialog for BHTV."""
+    """Navigate menu and return the open LAS export dialog for BHTV (moved off-screen)."""
     _open_export_menu(main, "l")
     dialog = Desktop(backend="win32").window(
         title="LAS 2.0 exportation for BHTV", class_name="#32770"
     )
     dialog.wait("exists visible ready", timeout=10)
+    _move_offscreen(dialog.handle)
     dialog.set_focus()
     return dialog
 
 
 def export_bhtv_las_file(dialog, hed_path: str):
     """Load one .hed and export LAS. Dialog must already be open."""
-    dialog.descendants()[3].click_input()
+    dialog.descendants()[3].click()
     _load_hed(hed_path)
 
     for t in LAS_TARGETS:
         _ensure_checked(dialog, t)
 
-    dialog.child_window(title="&Start", class_name="Button").click_input()
+    dialog.child_window(title="&Start", class_name="Button").click()
 
-    # Replace dialog in BHTV uses title "OPTV" (vendor quirk)
     result = _handle_dialog(timeout=1.0)
     if result == "skipped":
         _handle_dialog(timeout=2.0)
@@ -294,4 +311,4 @@ def export_bhtv_las_file(dialog, hed_path: str):
 
 
 def close_bhtv_las_dialog(dialog):
-    dialog.child_window(title="&Close", class_name="Button").click_input()
+    dialog.child_window(title="&Close", class_name="Button").click()

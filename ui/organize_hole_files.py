@@ -209,6 +209,19 @@ def build_plan(
 # Execution
 # ---------------------------------------------------------------------------
 
+def delete_unwanted_files(root: Path) -> int:
+    """Delete .pdf and .las files under root after sorting. Returns count deleted."""
+    deleted = 0
+    for path in root.rglob("*"):
+        if path.is_file() and path.suffix.lower() in (".pdf", ".las"):
+            try:
+                path.unlink()
+                deleted += 1
+            except OSError:
+                pass
+    return deleted
+
+
 def delete_empty_dirs(root: Path) -> int:
     """Remove empty directories under root (deepest first). Returns count deleted."""
     deleted = 0

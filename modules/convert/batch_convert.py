@@ -6,6 +6,8 @@ Usage (from project root):
     python -m modules.convert.batch_convert config/selected_hed_targets.json
 """
 
+import ctypes
+import ctypes.wintypes as _wt
 import json
 import logging
 import sys
@@ -13,11 +15,13 @@ import threading
 import time
 from datetime import datetime
 from pathlib import Path
+from typing import Callable
 
 import psutil
 from pywinauto.application import Application
 
 from modules.convert.vendor_app import (
+    _move_offscreen,
     open_picture_dialog, export_picture_file, close_picture_dialog,
     open_optv_las_dialog, export_optv_las_file, close_optv_las_dialog,
     open_bhtv_las_dialog, export_bhtv_las_file, close_bhtv_las_dialog,
@@ -27,6 +31,46 @@ OPTV_PATH = r"C:\Electromind\OPTV Logger\OPTV.exe"
 BHTV_PATH = r"C:\Electromind\BHTV Logger\BHTV.exe"
 
 log = logging.getLogger(__name__)
+
+_VENDOR_EXES = frozenset({"optv.exe", "bhtv.exe"})
+_WNDENUMPROC = ctypes.WINFUNCTYPE(_wt.BOOL, _wt.HWND, _wt.LPARAM)
+
+
+def _window_hider_thread(stop_event: threading.Event) -> None:
+    """
+    Polls every 50 ms for any window owned by a vendor process and moves it
+    off-screen immediately. Catches the main window, every export dialog,
+    the Open file dialog, and error popups — nothing flashes on the desktop.
+    """
+    moved: set[int] = set()
+    user32 = ctypes.windll.user32
+    target_pids: set[int] = set()
+
+    def _cb(hwnd: int, _: int) -> bool:
+        if hwnd not in moved:
+            try:
+                pid = _wt.DWORD(0)
+                user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
+                if pid.value in target_pids:
+                    _move_offscreen(hwnd)
+                    moved.add(hwnd)
+            except Exception:
+                pass
+        return True
+
+    enum_cb = _WNDENUMPROC(_cb)
+
+    while not stop_event.is_set():
+        target_pids.clear()
+        for proc in psutil.process_iter(["pid", "name"]):
+            try:
+                if (proc.info["name"] or "").lower() in _VENDOR_EXES:
+                    target_pids.add(proc.info["pid"])
+            except Exception:
+                pass
+        if target_pids:
+            user32.EnumWindows(enum_cb, 0)
+        stop_event.wait(0.05)
 
 
 # ---------------------------------------------------------------------------
@@ -62,6 +106,7 @@ def _start_optv():
     app.OPTV.OK.click()
     main = app.window(title_re=".*OPTV Acquisition.*")
     main.wait("visible", timeout=3)
+    _move_offscreen(main.handle)
     main.set_focus()
     return main
 
@@ -73,6 +118,7 @@ def _start_bhtv():
     app.BHTV.OK.click()
     main = app.window(title_re=".*BHTV Acquisition.*")
     main.wait("visible", timeout=3)
+    _move_offscreen(main.handle)
     main.set_focus()
     return main
 
@@ -82,12 +128,15 @@ def _start_bhtv():
 # ---------------------------------------------------------------------------
 
 def _run_loop(entries, app_start_fn, open_dialog_fn, export_fn, close_dialog_fn,
-              kill_path, export_label, stop_event=None):
+              kill_path, export_label, stop_event=None,
+              progress_cb: Callable[[int, int, str], None] | None = None,
+              progress_offset: int = 0, progress_total: int = 0):
     """
     Open dialog once, iterate entries calling export_fn(dialog, hed_path),
     close dialog, kill app.
     On per-file failure: log, restart app + re-open dialog, continue next entry.
     stop_event (threading.Event): checked before each file.
+    progress_cb(current, total, label): called after each completed file.
     Returns {hole: "ok" | "FAILED: ..." | "SKIPPED: ..."}.
     """
     results = {}
@@ -108,11 +157,14 @@ def _run_loop(entries, app_start_fn, open_dialog_fn, export_fn, close_dialog_fn,
             export_fn(dialog, hed_path)
             results[hole] = "ok"
             log.info("[%s] %s — done", hole, export_label)
+            if progress_cb:
+                progress_cb(progress_offset + i + 1, progress_total,
+                            f"{export_label} — {hole}")
         except Exception as exc:
             results[hole] = f"FAILED: {exc}"
             log.error("[%s] %s — failed: %s  ->  restarting app", hole, export_label, exc)
             _kill_app(kill_path)
-            time.sleep(1)
+            time.sleep(2)
             try:
                 main = app_start_fn()
                 dialog = open_dialog_fn(main)
@@ -134,37 +186,52 @@ def _run_loop(entries, app_start_fn, open_dialog_fn, export_fn, close_dialog_fn,
 # Public batch runners
 # ---------------------------------------------------------------------------
 
-def run_optv_batch(entries: list, stop_event=None) -> dict:
+def run_optv_batch(entries: list, stop_event=None,
+                   progress_cb=None, progress_offset: int = 0,
+                   progress_total: int = 0) -> dict:
     """Picture loop then LAS loop for all OPTV entries."""
-    log.info("=== OPTV Picture export: %d holes ===", len(entries))
+    n = len(entries)
+    log.info("=== OPTV Picture export: %d holes ===", n)
     picture = _run_loop(
         entries, _start_optv,
         open_picture_dialog, export_picture_file, close_picture_dialog,
-        OPTV_PATH, "picture", stop_event,
+        OPTV_PATH, "OPTV picture", stop_event,
+        progress_cb=progress_cb,
+        progress_offset=progress_offset,
+        progress_total=progress_total,
     )
 
     if stop_event and stop_event.is_set():
         holes = {e["hole"] for e in entries}
-        return {hole: {"picture": picture.get(hole), "las": "SKIPPED: stopped by user"} for hole in holes}
+        return {hole: {"picture": picture.get(hole),
+                       "las": "SKIPPED: stopped by user"} for hole in holes}
 
-    log.info("=== OPTV LAS export: %d holes ===", len(entries))
+    log.info("=== OPTV LAS export: %d holes ===", n)
     las = _run_loop(
         entries, _start_optv,
         open_optv_las_dialog, export_optv_las_file, close_optv_las_dialog,
-        OPTV_PATH, "las", stop_event,
+        OPTV_PATH, "OPTV las", stop_event,
+        progress_cb=progress_cb,
+        progress_offset=progress_offset + n,
+        progress_total=progress_total,
     )
 
     holes = {e["hole"] for e in entries}
     return {hole: {"picture": picture.get(hole), "las": las.get(hole)} for hole in holes}
 
 
-def run_bhtv_batch(entries: list, stop_event=None) -> dict:
+def run_bhtv_batch(entries: list, stop_event=None,
+                   progress_cb=None, progress_offset: int = 0,
+                   progress_total: int = 0) -> dict:
     """LAS loop for all BHTV entries."""
     log.info("=== BHTV LAS export: %d holes ===", len(entries))
     las = _run_loop(
         entries, _start_bhtv,
         open_bhtv_las_dialog, export_bhtv_las_file, close_bhtv_las_dialog,
-        BHTV_PATH, "las", stop_event,
+        BHTV_PATH, "BHTV las", stop_event,
+        progress_cb=progress_cb,
+        progress_offset=progress_offset,
+        progress_total=progress_total,
     )
     return {hole: {"las": result} for hole, result in las.items()}
 
@@ -173,7 +240,10 @@ def run_bhtv_batch(entries: list, stop_event=None) -> dict:
 # Entry point
 # ---------------------------------------------------------------------------
 
-def run_all(targets_json_path: str = "config/selected_hed_targets.json", stop_event=None):
+def run_all(targets_json_path: str = "config/selected_hed_targets.json",
+            stop_event=None, progress_cb=None):
+    global OPTV_PATH, BHTV_PATH
+
     log_dir = Path("logs")
     log_dir.mkdir(exist_ok=True)
     log_file = log_dir / f"convert_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
@@ -187,6 +257,17 @@ def run_all(targets_json_path: str = "config/selected_hed_targets.json", stop_ev
         ],
     )
 
+    # Load configured exe paths from persisted state (set via Config dialog)
+    _state_path = Path(__file__).resolve().parents[2] / "config" / "launcher_state.json"
+    try:
+        _st = json.loads(_state_path.read_text(encoding="utf-8"))
+        if _st.get("optv_path"):
+            OPTV_PATH = _st["optv_path"]
+        if _st.get("bhtv_path"):
+            BHTV_PATH = _st["bhtv_path"]
+    except Exception:
+        pass
+
     with open(targets_json_path) as f:
         targets = json.load(f)
 
@@ -194,22 +275,68 @@ def run_all(targets_json_path: str = "config/selected_hed_targets.json", stop_ev
     bhtv = [t for t in targets if t["data_type"] == "BHTV"]
     log.info("Loaded %d OPTV, %d BHTV targets from %s", len(optv), len(bhtv), targets_json_path)
 
+    # Start background window hider — keeps all vendor windows off-screen
+    _hider_stop = threading.Event()
+    _hider = threading.Thread(target=_window_hider_thread,
+                              args=(_hider_stop,), daemon=True)
+    _hider.start()
+
+    # Total operations: OPTV needs picture + LAS (2 passes), BHTV needs LAS only
+    total_ops = 2 * len(optv) + len(bhtv)
+    _completed = [0]
+    _lock = threading.Lock()
+
+    def _progress(current: int, total: int, label: str):
+        # Emit a special token the launcher UI detects for progress bar updates
+        log.info("__PROGRESS__ %d/%d %s", current, total, label)
+
+    # Build per-stream progress callbacks with thread-safe shared counter
+    def _make_cb(offset: int):
+        def cb(current: int, total: int, label: str):
+            with _lock:
+                _completed[0] += 1
+                _progress(_completed[0], total_ops, label)
+        return cb
+
     all_results = {}
 
-    # OPTV and BHTV are independent processes — run them in parallel.
+    # OPTV and BHTV are independent — run in parallel
     threads = {}
     if optv:
-        t = threading.Thread(target=lambda: all_results.update(
-            {"OPTV": run_optv_batch(optv, stop_event)}), daemon=True)
+        t = threading.Thread(
+            target=lambda: all_results.update({
+                "OPTV": run_optv_batch(
+                    optv, stop_event,
+                    progress_cb=_make_cb(0),
+                    progress_offset=0,
+                    progress_total=total_ops,
+                )
+            }),
+            daemon=True,
+        )
         threads["OPTV"] = t
         t.start()
     if bhtv:
-        t = threading.Thread(target=lambda: all_results.update(
-            {"BHTV": run_bhtv_batch(bhtv, stop_event)}), daemon=True)
+        bhtv_offset = 2 * len(optv)
+        t = threading.Thread(
+            target=lambda: all_results.update({
+                "BHTV": run_bhtv_batch(
+                    bhtv, stop_event,
+                    progress_cb=_make_cb(bhtv_offset),
+                    progress_offset=bhtv_offset,
+                    progress_total=total_ops,
+                )
+            }),
+            daemon=True,
+        )
         threads["BHTV"] = t
         t.start()
     for t in threads.values():
         t.join()
+
+    # Stop window hider once all vendor processes are done
+    _hider_stop.set()
+    _hider.join(timeout=1)
 
     log.info("=== SUMMARY ===")
     for dtype, results in all_results.items():
