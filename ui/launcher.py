@@ -26,9 +26,9 @@ for _p in (str(_ROOT), str(_UI_DIR)):
 
 # ── project imports ─────────────────────────────────────────────────────────
 try:
-    from organize_hole_files import build_plan, apply_plan, extract_zips
+    from organize_hole_files import build_plan, apply_plan, extract_zips, delete_empty_dirs
 except ImportError:
-    from ui.organize_hole_files import build_plan, apply_plan, extract_zips
+    from ui.organize_hole_files import build_plan, apply_plan, extract_zips, delete_empty_dirs
 
 try:
     from hed_target_selector import (
@@ -110,7 +110,7 @@ class OrganiseSection(ttk.LabelFrame):
         ttk.Label(opts, text="Mode:").pack(side="left", padx=(16, 4))
         ttk.Combobox(opts, textvariable=self._mode_var, values=["move", "copy"],
                      state="readonly", width=6).pack(side="left")
-        ttk.Label(opts, text="Structure: HoleID / OTV · ATV · GPX · Reports").pack(side="left", padx=(16, 0))
+        ttk.Label(opts, text="Structure: HoleID / OTV · ATV · GPX").pack(side="left", padx=(16, 0))
         ttk.Button(opts, text="Scan", command=self._scan).pack(side="left", padx=(20, 0))
         ttk.Button(opts, text="Apply  ↓ Targets", command=self._apply).pack(side="left", padx=(8, 0))
         ttk.Label(opts, textvariable=self._status_var).pack(side="left", padx=(12, 0))
@@ -186,7 +186,7 @@ class OrganiseSection(ttk.LabelFrame):
         dirs = self._resolve_dirs()
         if not dirs:
             return
-        _, output_dir = dirs
+        source_dir, output_dir = dirs
         if not self._actions:
             self._status_var.set("Nothing to sort — proceeding.")
             if self.on_organized:
@@ -198,7 +198,9 @@ class OrganiseSection(ttk.LabelFrame):
             messagebox.showerror("Apply failed", str(exc))
             return
         verb = "moved" if self._mode_var.get() == "move" else "copied"
-        self._status_var.set(f"Done — {len(self._actions)} files {verb}.")
+        removed = delete_empty_dirs(source_dir) if self._mode_var.get() == "move" else 0
+        suffix = f", {removed} empty dirs removed" if removed else ""
+        self._status_var.set(f"Done — {len(self._actions)} files {verb}{suffix}.")
         self._actions = []
         self.tree.delete(*self.tree.get_children())
         if self.on_organized:
@@ -420,9 +422,11 @@ class ConvertSection(ttk.LabelFrame):
         ctrl.grid(row=2, column=0, sticky="w", pady=(0, 6))
         self._run_btn = ttk.Button(ctrl, text="Run Convert", command=self._start)
         self._run_btn.pack(side="left")
-        self._stop_btn = ttk.Button(ctrl, text="Stop", command=self._stop, state="disabled")
+        self._stop_btn = ttk.Button(ctrl, text="Stop  (finish file)", command=self._stop, state="disabled")
         self._stop_btn.pack(side="left", padx=(6, 0))
-        ttk.Button(ctrl, text="Clear log", command=self._clear_log).pack(side="left", padx=(6, 0))
+        self._abort_btn = ttk.Button(ctrl, text="Abort  (kill app)", command=self._abort, state="disabled")
+        self._abort_btn.pack(side="left", padx=(6, 0))
+        ttk.Button(ctrl, text="Clear log", command=self._clear_log).pack(side="left", padx=(16, 0))
 
         log_frame = ttk.LabelFrame(self, text="Convert log", padding=4)
         log_frame.grid(row=3, column=0, sticky="nsew")
@@ -507,6 +511,7 @@ class ConvertSection(ttk.LabelFrame):
         self._stop_event.clear()
         self._run_btn.configure(state="disabled")
         self._stop_btn.configure(state="normal")
+        self._abort_btn.configure(state="normal")
         self._append_log(f"=== Starting convert: {self._targets_path} ===")
 
         root_log = logging.getLogger()
@@ -532,16 +537,35 @@ class ConvertSection(ttk.LabelFrame):
         threading.Thread(target=worker, daemon=True).start()
         self.after(100, self._poll_log)
 
+    def _set_buttons_idle(self) -> None:
+        self._run_btn.configure(state="normal")
+        self._stop_btn.configure(state="disabled")
+        self._abort_btn.configure(state="disabled")
+
     def _stop(self) -> None:
         self._stop_event.set()
         self._append_log("=== Stop requested — finishing current file then stopping ===")
-        self._run_btn.configure(state="normal")
-        self._stop_btn.configure(state="disabled")
+        self._set_buttons_idle()
+
+    def _abort(self) -> None:
+        self._stop_event.set()
+        self._append_log("=== ABORT — killing vendor app now ===")
+        self._set_buttons_idle()
+
+        def _kill() -> None:
+            try:
+                from modules.convert.batch_convert import _kill_app, OPTV_PATH, BHTV_PATH
+                _kill_app(OPTV_PATH)
+                _kill_app(BHTV_PATH)
+                self._log_q.put("Vendor app killed.")
+            except Exception as exc:
+                self._log_q.put(f"Abort kill error: {exc}")
+
+        threading.Thread(target=_kill, daemon=True).start()
 
     def _on_done(self) -> None:
         self._running = False
-        self._run_btn.configure(state="normal")
-        self._stop_btn.configure(state="disabled")
+        self._set_buttons_idle()
         if self._log_handler and hasattr(self, "_root_log"):
             self._root_log.removeHandler(self._log_handler)
             self._log_handler = None

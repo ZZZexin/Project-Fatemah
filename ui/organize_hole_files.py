@@ -23,8 +23,7 @@ DEFAULT_SOURCE_DIR = Path(r"C:\2026_RTIO\West Angelas\Sent")
 
 OTV_MARKERS = ("OPTV", "OTV", "OBI")
 ATV_MARKERS = ("BHTV", "ATV", "ABI", "BTV", "ATS")
-REPORT_EXTENSIONS = {".pdf", ".doc", ".docx"}
-SORTABLE_EXTENSIONS = {".hed", ".lox", ".lgx", ".las", ".xlsx"} | REPORT_EXTENSIONS
+SORTABLE_EXTENSIONS = {".hed", ".lox", ".lgx", ".xlsx", ".log"}
 
 
 @dataclass(frozen=True)
@@ -90,12 +89,11 @@ def has_marker(path: Path, markers: tuple[str, ...]) -> bool:
 
 
 def classify_file(path: Path) -> str | None:
-    """Return 'OTV', 'ATV', 'GPX', 'Reports', or None (skip this file)."""
+    """Return 'OTV', 'ATV', 'GPX', or None (skip this file)."""
     ext = path.suffix.lower()
 
-    # Report files: PDF / Word docs — only if clearly named with a hole prefix
-    if ext in REPORT_EXTENSIONS:
-        return "Reports" if "_" in path.stem else None
+    if ext not in SORTABLE_EXTENSIONS:
+        return None
 
     # Drop LGX-derived .hed headers
     if ext == ".hed":
@@ -103,17 +101,14 @@ def classify_file(path: Path) -> str | None:
         if "LGX" in path.stem.upper() or "LGX" in parts_upper:
             return None
 
-    if ext not in SORTABLE_EXTENSIONS:
-        return None
-
-    # Instrument type takes priority over GPX
+    # Instrument type takes priority
     if has_marker(path, ATV_MARKERS):
         return "ATV"
     if has_marker(path, OTV_MARKERS):
         return "OTV"
 
-    # .las / .xlsx without instrument markers → survey/GPX data
-    if ext in (".las", ".xlsx"):
+    # .xlsx (wellreport) and .log (century log) without instrument markers → GPX
+    if ext in (".xlsx", ".log"):
         return "GPX"
 
     return None
@@ -213,6 +208,20 @@ def build_plan(
 # ---------------------------------------------------------------------------
 # Execution
 # ---------------------------------------------------------------------------
+
+def delete_empty_dirs(root: Path) -> int:
+    """Remove empty directories under root (deepest first). Returns count deleted."""
+    deleted = 0
+    # Walk bottom-up so children are removed before parents are checked
+    for dirpath in sorted(root.rglob("*"), reverse=True):
+        if dirpath.is_dir():
+            try:
+                dirpath.rmdir()   # only succeeds if empty
+                deleted += 1
+            except OSError:
+                pass
+    return deleted
+
 
 def apply_plan(actions: list[OrganizeAction], mode: str = "copy") -> None:
     for action in actions:

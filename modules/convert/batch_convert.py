@@ -57,10 +57,10 @@ def _kill_app(exe_path: str):
 def _start_optv():
     _kill_app(OPTV_PATH)
     app = Application(backend="uia").start(OPTV_PATH)
-    time.sleep(2)
+    app.OPTV.wait("visible", timeout=4)
     app.OPTV.OK.click()
     main = app.window(title_re=".*OPTV Acquisition.*")
-    main.wait("visible", timeout=15)
+    main.wait("visible", timeout=3)
     main.set_focus()
     return main
 
@@ -68,10 +68,10 @@ def _start_optv():
 def _start_bhtv():
     _kill_app(BHTV_PATH)
     app = Application(backend="uia").start(BHTV_PATH)
-    time.sleep(2)
+    app.BHTV.wait("visible", timeout=4)
     app.BHTV.OK.click()
     main = app.window(title_re=".*BHTV Acquisition.*")
-    main.wait("visible", timeout=15)
+    main.wait("visible", timeout=3)
     main.set_focus()
     return main
 
@@ -111,7 +111,7 @@ def _run_loop(entries, app_start_fn, open_dialog_fn, export_fn, close_dialog_fn,
             results[hole] = f"FAILED: {exc}"
             log.error("[%s] %s — failed: %s  ->  restarting app", hole, export_label, exc)
             _kill_app(kill_path)
-            time.sleep(2)
+            time.sleep(1)
             try:
                 main = app_start_fn()
                 dialog = open_dialog_fn(main)

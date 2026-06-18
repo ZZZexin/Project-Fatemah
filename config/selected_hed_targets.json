@@ -2,65 +2,33 @@
   {
     "hole": "Z364003006",
     "data_type": "OPTV",
-    "run": "INRUN",
+    "run": "Z364003006_INRUN.hed",
     "parent_directory": "C:\\2026_RTIO\\Paraburdo\\test\\Z364003006\\OTV",
     "file_name": "Z364003006_INRUN.hed",
     "path": "C:\\2026_RTIO\\Paraburdo\\test\\Z364003006\\OTV\\Z364003006_INRUN.hed"
   },
   {
-    "hole": "Z364003006",
-    "data_type": "OPTV",
-    "run": "INRUN",
-    "parent_directory": "C:\\2026_RTIO\\Paraburdo\\test\\Z364003006_260607_OPTV_2107",
-    "file_name": "Z364003006_INRUN.hed",
-    "path": "C:\\2026_RTIO\\Paraburdo\\test\\Z364003006_260607_OPTV_2107\\Z364003006_INRUN.hed"
-  },
-  {
     "hole": "Z364003026",
     "data_type": "OPTV",
-    "run": "INRUN",
+    "run": "Z364003026_INRUN.hed",
     "parent_directory": "C:\\2026_RTIO\\Paraburdo\\test\\Z364003026\\OTV",
     "file_name": "Z364003026_INRUN.hed",
     "path": "C:\\2026_RTIO\\Paraburdo\\test\\Z364003026\\OTV\\Z364003026_INRUN.hed"
   },
   {
-    "hole": "Z364003026",
-    "data_type": "OPTV",
-    "run": "INRUN",
-    "parent_directory": "C:\\2026_RTIO\\Paraburdo\\test\\Z364003026_260607_OPTV_2107",
-    "file_name": "Z364003026_INRUN.hed",
-    "path": "C:\\2026_RTIO\\Paraburdo\\test\\Z364003026_260607_OPTV_2107\\Z364003026_INRUN.hed"
-  },
-  {
     "hole": "Z364003057",
     "data_type": "OPTV",
-    "run": "INRUN",
+    "run": "Z364003057_INRUN.hed",
     "parent_directory": "C:\\2026_RTIO\\Paraburdo\\test\\Z364003057\\OTV",
     "file_name": "Z364003057_INRUN.hed",
     "path": "C:\\2026_RTIO\\Paraburdo\\test\\Z364003057\\OTV\\Z364003057_INRUN.hed"
   },
   {
-    "hole": "Z364003057",
-    "data_type": "OPTV",
-    "run": "INRUN",
-    "parent_directory": "C:\\2026_RTIO\\Paraburdo\\test\\Z364003057_260607_OPTV_2107",
-    "file_name": "Z364003057_INRUN.hed",
-    "path": "C:\\2026_RTIO\\Paraburdo\\test\\Z364003057_260607_OPTV_2107\\Z364003057_INRUN.hed"
-  },
-  {
     "hole": "Z364003085",
     "data_type": "OPTV",
-    "run": "INRUN",
+    "run": "Z364003085_INRUN.hed",
     "parent_directory": "C:\\2026_RTIO\\Paraburdo\\test\\Z364003085\\OTV",
     "file_name": "Z364003085_INRUN.hed",
     "path": "C:\\2026_RTIO\\Paraburdo\\test\\Z364003085\\OTV\\Z364003085_INRUN.hed"
-  },
-  {
-    "hole": "Z364003085",
-    "data_type": "OPTV",
-    "run": "INRUN",
-    "parent_directory": "C:\\2026_RTIO\\Paraburdo\\test\\Z364003085_260607_OPTV_2107",
-    "file_name": "Z364003085_INRUN.hed",
-    "path": "C:\\2026_RTIO\\Paraburdo\\test\\Z364003085_260607_OPTV_2107\\Z364003085_INRUN.hed"
   }
 ]

@@ -4,28 +4,31 @@ Design: dialogs are opened ONCE before the batch loop and closed after.
 Each export_*_file() function loads a new .hed into the already-open dialog.
 """
 
-from pywinauto import Desktop
-import pyperclip
+from __future__ import annotations
+
 import time
+
+import pyperclip
+from pywinauto import Desktop
 
 LAS_TARGETS = ["Inclination", "Azimuth", "Total Mag.", "Natural Gamma"]
 
 
 # ---------------------------------------------------------------------------
-# Shared low-level helpers
+# Low-level helpers
 # ---------------------------------------------------------------------------
 
 def _load_hed(hed_path: str):
-    """Paste hed_path into the currently open 'Open' file dialog and confirm."""
+    """Paste hed_path into the open 'Open' file dialog and confirm."""
     open_dialog = Desktop(backend="win32").window(title="Open", class_name="#32770")
     open_dialog.wait("exists visible ready", timeout=10)
     open_dialog.set_focus()
     pyperclip.copy(hed_path)
     open_dialog.type_keys("%n")
-    time.sleep(0.2)
+    time.sleep(0.1)
     open_dialog.type_keys("^a")
     open_dialog.type_keys("^v")
-    time.sleep(0.2)
+    time.sleep(0.1)
     open_dialog.type_keys("{ENTER}")
 
 
@@ -36,31 +39,134 @@ def _ensure_checked(parent_window, title: str):
         cb.click_input()
 
 
-def _try_replace_dialog(app_title: str, timeout: float = 3.0) -> bool:
-    """Click No on 'file already exists — replace?' dialog if it appears."""
+def _handle_dialog(timeout: float = 1.0) -> str:
+    """
+    Dismiss any OPTV or BHTV-titled popup dialog.
+
+    Tries No first (replace/skip dialog) then OK (error or completion dialog).
+    Returns: 'skipped' | 'ok' | 'none'
+    """
+    for title in ("OPTV", "BHTV"):
+        try:
+            dlg = Desktop(backend="win32").window(title=title, class_name="#32770")
+            dlg.wait("exists visible ready", timeout=timeout)
+            dlg.set_focus()
+        except Exception:
+            continue
+
+        try:
+            no_btn = dlg.child_window(title_re=".*No.*", class_name="Button")
+            no_btn.wait("enabled", timeout=1)
+            no_btn.click_input()
+            return "skipped"
+        except Exception:
+            pass
+
+        try:
+            ok_btn = dlg.child_window(title_re=".*OK.*", class_name="Button")
+            ok_btn.wait("enabled", timeout=1)
+            ok_btn.click_input()
+            return "ok"
+        except Exception:
+            pass
+
+    return "none"
+
+
+def _poll_handle_dialog():
+    """
+    Non-blocking popup check used inside monitoring loops.
+    Only handles the dialog if it already exists — no waiting.
+    """
+    for title in ("OPTV", "BHTV"):
+        try:
+            dlg = Desktop(backend="win32").window(title=title, class_name="#32770")
+            if not dlg.exists():
+                continue
+            dlg.set_focus()
+        except Exception:
+            continue
+
+        try:
+            no_btn = dlg.child_window(title_re=".*No.*", class_name="Button")
+            if no_btn.exists():
+                no_btn.click_input()
+                return "skipped"
+        except Exception:
+            pass
+
+        try:
+            ok_btn = dlg.child_window(title_re=".*OK.*", class_name="Button")
+            if ok_btn.exists():
+                ok_btn.click_input()
+                return "ok"
+        except Exception:
+            pass
+
+    return "none"
+
+
+def _has_lgx_pass(dialog) -> bool:
+    """True if any descendant shows 'Creating LGX Pass' AND 'wait' — actively exporting."""
     try:
-        dlg = Desktop(backend="win32").window(title=app_title, class_name="#32770")
-        dlg.wait("exists visible ready", timeout=timeout)
-        dlg.set_focus()
-        no_btn = dlg.child_window(title_re=".*No.*", class_name="Button")
-        no_btn.wait("enabled", timeout=5)
-        no_btn.click_input()
-        return True
+        for ctrl in dialog.descendants():
+            try:
+                t = ctrl.window_text()
+                if "Creating LGX Pass" in t and "wait" in t.lower():
+                    return True
+            except Exception:
+                pass
     except Exception:
-        return False
+        pass
+    return False
 
 
-def _click_ok_dialog(app_title: str, timeout: float = 60.0):
-    dlg = Desktop(backend="win32").window(title=app_title, class_name="#32770")
-    dlg.wait("exists visible ready", timeout=timeout)
-    dlg.set_focus()
-    ok_btn = dlg.child_window(title_re=".*OK.*", class_name="Button")
-    ok_btn.wait("enabled", timeout=10)
-    ok_btn.click_input()
+def _wait_picture_complete(dialog, timeout: float = 300):
+    """
+    Wait for picture/LGX export to finish using a two-state machine.
+
+    status 0→1 when 'Creating LGX Pass...wait...' appears.
+    status 1→0 (done) when it disappears and is still gone after 0.1 s.
+    If it never appears within 15 s, assumes export was instant and returns.
+    """
+    deadline = time.time() + timeout
+    start_deadline = time.time() + 15
+    status = 0
+
+    while time.time() < deadline:
+        _poll_handle_dialog()
+        found = _has_lgx_pass(dialog)
+
+        if found:
+            status = 1
+        elif status == 1:
+            time.sleep(0.1)
+            if not _has_lgx_pass(dialog):
+                return   # export complete
+        elif status == 0 and time.time() > start_deadline:
+            return   # never started within 15 s — assume instant export
+
+        time.sleep(0.1)
+
+
+def _wait_las_complete(dialog, timeout: float = 120):
+    """Wait for LAS export to finish. Returns as soon as 'File migred' appears."""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        try:
+            for ctrl in dialog.descendants():
+                try:
+                    if "File migred" in ctrl.window_text():
+                        return
+                except Exception:
+                    pass
+        except Exception:
+            pass
+        time.sleep(0.1)
 
 
 def _open_export_menu(main, shortcut_key: str):
-    """Alt+F → x (Export) → shortcut_key to open the correct export dialog."""
+    """Alt+F → x (Export) → shortcut_key."""
     main.set_focus()
     main.type_keys("%f")
     time.sleep(0.1)
@@ -85,10 +191,9 @@ def open_picture_dialog(main):
 
 def export_picture_file(dialog, hed_path: str):
     """Load one .hed and export picture/LGX. Dialog must already be open."""
-    dialog.descendants()[3].click_input()   # browse button (index confirmed by v2)
+    dialog.descendants()[3].click_input()   # browse button
     _load_hed(hed_path)
 
-    # Re-focus dialog after Open dialog closes
     dialog.wait("exists visible ready", timeout=10)
     dialog.set_focus()
 
@@ -101,14 +206,14 @@ def export_picture_file(dialog, hed_path: str):
     lgx_cb.wait("enabled", timeout=10)
     if lgx_cb.get_check_state() == 0:
         lgx_cb.click_input()
-    time.sleep(0.3)
+    time.sleep(0.1)
 
-    export_btn = dialog.child_window(title="&Export", class_name="Button")
-    export_btn.click_input()
+    dialog.child_window(title="&Export", class_name="Button").click_input()
 
-    _try_replace_dialog("OPTV", timeout=3.0)
-    # Button re-enables when export finishes (or was skipped)
-    export_btn.wait("enabled", timeout=120)
+    # Handle optional replace dialog or immediate error (1 s is enough)
+    _handle_dialog(timeout=1.0)
+
+    _wait_picture_complete(dialog, timeout=300)
 
 
 def close_picture_dialog(dialog):
@@ -140,8 +245,12 @@ def export_optv_las_file(dialog, hed_path: str):
 
     dialog.child_window(title="&Start", class_name="Button").click_input()
 
-    _try_replace_dialog("OPTV", timeout=3.0)
-    _click_ok_dialog("OPTV", timeout=60)
+    result = _handle_dialog(timeout=1.0)
+    if result == "skipped":
+        # File already existed: vendor shows a second popup after the No click
+        _handle_dialog(timeout=5.0)
+    else:
+        _wait_las_complete(dialog, timeout=120)
 
 
 def close_optv_las_dialog(dialog):
@@ -173,9 +282,9 @@ def export_bhtv_las_file(dialog, hed_path: str):
 
     dialog.child_window(title="&Start", class_name="Button").click_input()
 
-    # Replace dialog in BHTV app has title "OPTV" (vendor quirk)
-    _try_replace_dialog("OPTV", timeout=3.0)
-    _click_ok_dialog("BHTV", timeout=60)
+    # Replace dialog in BHTV uses title "OPTV" (vendor quirk)
+    if _handle_dialog(timeout=1.0) != "skipped":
+        _wait_las_complete(dialog, timeout=120)
 
 
 def close_bhtv_las_dialog(dialog):
