@@ -234,7 +234,7 @@ class OrganiseSection(ttk.LabelFrame):
             messagebox.showerror("Apply failed", str(exc))
             return
         verb = "moved" if self._mode_var.get() == "move" else "copied"
-        deleted = delete_unwanted_files(source_dir)
+        deleted = delete_unwanted_files(source_dir) if self._mode_var.get() == "move" else 0
         removed = delete_empty_dirs(source_dir) if self._mode_var.get() == "move" else 0
         parts = [f"{len(self._actions)} files {verb}"]
         if deleted:
@@ -450,6 +450,7 @@ class ConvertSection(ttk.LabelFrame):
         self._summary_var = tk.StringVar(value="No targets loaded.")
         self._status_var  = tk.StringVar(value="Idle")
         self._running = False
+        self._abort_requested = False
         self._stop_event = threading.Event()
         self._log_q: queue.Queue = queue.Queue()
         self._log_handler: logging.Handler | None = None
@@ -645,6 +646,7 @@ class ConvertSection(ttk.LabelFrame):
                                  f"File not found:\n{self._targets_path}")
             return
         self._set_running(True)
+        self._abort_requested = False
         self._stop_event.clear()
         self._append_log(f"=== Starting convert: {self._targets_path} ===")
 
@@ -675,14 +677,16 @@ class ConvertSection(ttk.LabelFrame):
     def _stop(self) -> None:
         self._stop_event.set()
         self._append_log("=== Stop requested — finishing current file then stopping ===")
-        self._set_running(False)
+        self._stop_btn.configure(state="disabled")
         self._status_var.set("Stopping…")
         self._status_lbl.configure(foreground="#cc6600")
 
     def _abort(self) -> None:
         self._stop_event.set()
+        self._abort_requested = True
         self._append_log("=== ABORT — killing vendor app now ===")
-        self._set_running(False)
+        self._stop_btn.configure(state="disabled")
+        self._abort_btn.configure(state="disabled")
         self._status_var.set("Aborting…")
         self._status_lbl.configure(foreground="#cc0000")
 
@@ -757,8 +761,15 @@ class ConvertSection(ttk.LabelFrame):
             self._root_log.removeHandler(self._log_handler)
             self._log_handler = None
         self._append_log("=== Convert complete ===")
-        self._status_var.set("Done")
-        self._status_lbl.configure(foreground="#007700")
+        if self._abort_requested:
+            self._status_var.set("Aborted")
+            self._status_lbl.configure(foreground="#cc0000")
+        elif self._stop_event.is_set():
+            self._status_var.set("Stopped")
+            self._status_lbl.configure(foreground="#cc6600")
+        else:
+            self._status_var.set("Done")
+            self._status_lbl.configure(foreground="#007700")
         # Fill bar to 100% on completion
         self._progress.configure(mode="determinate", value=100)
         self._progress_lbl.configure(text="complete")

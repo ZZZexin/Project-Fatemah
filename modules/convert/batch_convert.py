@@ -107,7 +107,6 @@ def _start_optv():
     main = app.window(title_re=".*OPTV Acquisition.*")
     main.wait("visible", timeout=3)
     _move_offscreen(main.handle)
-    main.set_focus()
     return main
 
 
@@ -119,7 +118,6 @@ def _start_bhtv():
     main = app.window(title_re=".*BHTV Acquisition.*")
     main.wait("visible", timeout=3)
     _move_offscreen(main.handle)
-    main.set_focus()
     return main
 
 
@@ -248,14 +246,17 @@ def run_all(targets_json_path: str = "config/selected_hed_targets.json",
     log_dir.mkdir(exist_ok=True)
     log_file = log_dir / f"convert_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
 
-    logging.basicConfig(
-        level=logging.INFO,
-        format="%(asctime)s %(levelname)-8s %(message)s",
-        handlers=[
-            logging.StreamHandler(),
-            logging.FileHandler(log_file),
-        ],
-    )
+    formatter = logging.Formatter("%(asctime)s %(levelname)-8s %(message)s")
+    root_log = logging.getLogger()
+    had_handlers = bool(root_log.handlers)
+    root_log.setLevel(logging.INFO)
+    file_handler = logging.FileHandler(log_file)
+    file_handler.setFormatter(formatter)
+    root_log.addHandler(file_handler)
+    if not had_handlers:
+        stream_handler = logging.StreamHandler()
+        stream_handler.setFormatter(formatter)
+        root_log.addHandler(stream_handler)
 
     # Load configured exe paths from persisted state (set via Config dialog)
     _state_path = Path(__file__).resolve().parents[2] / "config" / "launcher_state.json"
@@ -281,62 +282,48 @@ def run_all(targets_json_path: str = "config/selected_hed_targets.json",
                               args=(_hider_stop,), daemon=True)
     _hider.start()
 
-    # Total operations: OPTV needs picture + LAS (2 passes), BHTV needs LAS only
-    total_ops = 2 * len(optv) + len(bhtv)
-    _completed = [0]
-    _lock = threading.Lock()
+    try:
+        # Total operations: OPTV needs picture + LAS (2 passes), BHTV needs LAS only
+        total_ops = 2 * len(optv) + len(bhtv)
+        _completed = [0]
+        _lock = threading.Lock()
 
-    def _progress(current: int, total: int, label: str):
-        # Emit a special token the launcher UI detects for progress bar updates
-        log.info("__PROGRESS__ %d/%d %s", current, total, label)
+        def _progress(current: int, total: int, label: str):
+            # Emit a special token the launcher UI detects for progress bar updates
+            log.info("__PROGRESS__ %d/%d %s", current, total, label)
 
-    # Build per-stream progress callbacks with thread-safe shared counter
-    def _make_cb(offset: int):
-        def cb(current: int, total: int, label: str):
-            with _lock:
-                _completed[0] += 1
-                _progress(_completed[0], total_ops, label)
-        return cb
+        # Build per-stream progress callbacks with thread-safe shared counter
+        def _make_cb(offset: int):
+            def cb(current: int, total: int, label: str):
+                with _lock:
+                    _completed[0] += 1
+                    _progress(_completed[0], total_ops, label)
+            return cb
 
-    all_results = {}
+        all_results = {}
 
-    # OPTV and BHTV are independent — run in parallel
-    threads = {}
-    if optv:
-        t = threading.Thread(
-            target=lambda: all_results.update({
-                "OPTV": run_optv_batch(
-                    optv, stop_event,
-                    progress_cb=_make_cb(0),
-                    progress_offset=0,
-                    progress_total=total_ops,
-                )
-            }),
-            daemon=True,
-        )
-        threads["OPTV"] = t
-        t.start()
-    if bhtv:
-        bhtv_offset = 2 * len(optv)
-        t = threading.Thread(
-            target=lambda: all_results.update({
-                "BHTV": run_bhtv_batch(
-                    bhtv, stop_event,
-                    progress_cb=_make_cb(bhtv_offset),
-                    progress_offset=bhtv_offset,
-                    progress_total=total_ops,
-                )
-            }),
-            daemon=True,
-        )
-        threads["BHTV"] = t
-        t.start()
-    for t in threads.values():
-        t.join()
-
-    # Stop window hider once all vendor processes are done
-    _hider_stop.set()
-    _hider.join(timeout=1)
+        # Keep UI automation sequential so vendor apps do not compete for desktop focus.
+        if optv:
+            all_results["OPTV"] = run_optv_batch(
+                optv, stop_event,
+                progress_cb=_make_cb(0),
+                progress_offset=0,
+                progress_total=total_ops,
+            )
+        if bhtv and not (stop_event and stop_event.is_set()):
+            bhtv_offset = 2 * len(optv)
+            all_results["BHTV"] = run_bhtv_batch(
+                bhtv, stop_event,
+                progress_cb=_make_cb(bhtv_offset),
+                progress_offset=bhtv_offset,
+                progress_total=total_ops,
+            )
+    finally:
+        _hider_stop.set()
+        _hider.join(timeout=1)
+        if sys.exc_info()[0] is not None:
+            root_log.removeHandler(file_handler)
+            file_handler.close()
 
     log.info("=== SUMMARY ===")
     for dtype, results in all_results.items():
@@ -347,6 +334,8 @@ def run_all(targets_json_path: str = "config/selected_hed_targets.json",
                          "" if result == "ok" else result)
 
     log.info("Log saved to %s", log_file)
+    root_log.removeHandler(file_handler)
+    file_handler.close()
     return all_results
 
 

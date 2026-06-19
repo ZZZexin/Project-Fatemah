@@ -32,17 +32,28 @@ def _move_offscreen(hwnd: int) -> None:
 # ---------------------------------------------------------------------------
 
 def _load_hed(hed_path: str):
-    """Paste hed_path into the open 'Open' file dialog and confirm."""
+    """Set hed_path in the open 'Open' file dialog and confirm."""
     open_dialog = Desktop(backend="win32").window(title="Open", class_name="#32770")
     open_dialog.wait("exists visible ready", timeout=10)
     _move_offscreen(open_dialog.handle)
+
+    try:
+        edit = open_dialog.child_window(class_name="Edit")
+        edit.wait("exists enabled", timeout=3)
+        edit.set_edit_text(hed_path)
+        open_dialog.child_window(title_re=".*Open.*", class_name="Button").click()
+        return
+    except Exception:
+        pass
+
+    # Fallback for older common dialogs that reject direct edit-control updates.
     open_dialog.set_focus()
     pyperclip.copy(hed_path)
     open_dialog.type_keys("%n")
-    time.sleep(0.1)
+    time.sleep(0.05)
     open_dialog.type_keys("^a")
     open_dialog.type_keys("^v")
-    time.sleep(0.1)
+    time.sleep(0.05)
     open_dialog.type_keys("{ENTER}")
 
 
@@ -51,6 +62,20 @@ def _ensure_checked(parent_window, title: str):
     cb.wait("exists enabled", timeout=2)
     if cb.get_check_state() == 0:
         cb.click()
+
+
+def _click_browse_button(dialog) -> None:
+    """Click the dialog browse button, preferring named controls over index order."""
+    for title_re in (".*Browse.*", r".*\.\.\..*"):
+        try:
+            btn = dialog.child_window(title_re=title_re, class_name="Button")
+            btn.wait("exists enabled", timeout=1)
+            btn.click()
+            return
+        except Exception:
+            pass
+
+    dialog.descendants()[3].click()
 
 
 def _handle_dialog(timeout: float = 1.0) -> str:
@@ -65,7 +90,6 @@ def _handle_dialog(timeout: float = 1.0) -> str:
             dlg = Desktop(backend="win32").window(title=title, class_name="#32770")
             dlg.wait("exists visible ready", timeout=timeout)
             _move_offscreen(dlg.handle)
-            dlg.set_focus()
         except Exception:
             continue
 
@@ -99,7 +123,6 @@ def _poll_handle_dialog():
             if not dlg.exists():
                 continue
             _move_offscreen(dlg.handle)
-            dlg.set_focus()
         except Exception:
             continue
 
@@ -165,9 +188,11 @@ def _wait_picture_complete(dialog, timeout: float = 300):
             if not _has_lgx_pass(dialog):
                 return   # export complete
         elif status == 0 and time.time() > start_deadline:
-            return   # never started within 15 s — assume instant export
+            raise TimeoutError("Picture export did not start before timeout")
 
         time.sleep(0.1)
+
+    raise TimeoutError("Picture export did not finish before timeout")
 
 
 def _wait_las_complete(dialog, timeout: float = 120):
@@ -184,17 +209,30 @@ def _wait_las_complete(dialog, timeout: float = 120):
         except Exception:
             pass
         time.sleep(0.1)
+    raise TimeoutError("LAS export did not finish before timeout")
 
 
 def _open_export_menu(main, shortcut_key: str):
     """Alt+F → x (Export) → shortcut_key."""
+    menu_paths = {
+        "p": ("File->Export->Picture", "File->Export->Picture export"),
+        "l": ("File->Export->LAS", "File->Export->LAS 2.0"),
+    }
+    for path in menu_paths.get(shortcut_key, ()):
+        try:
+            main.menu_select(path)
+            time.sleep(0.05)
+            return
+        except Exception:
+            pass
+
     main.set_focus()
     main.type_keys("%f")
-    time.sleep(0.1)
+    time.sleep(0.05)
     main.type_keys("x")
-    time.sleep(0.1)
+    time.sleep(0.05)
     main.type_keys(shortcut_key)
-    time.sleep(0.1)
+    time.sleep(0.05)
 
 
 # ---------------------------------------------------------------------------
@@ -207,16 +245,14 @@ def open_picture_dialog(main):
     dialog = Desktop(backend="win32").window(title_re=".*Picture export.*")
     dialog.wait("exists visible ready", timeout=10)
     _move_offscreen(dialog.handle)
-    dialog.set_focus()
     return dialog
 
 
 def export_picture_file(dialog, hed_path: str):
     """Load one .hed and export picture/LGX. Dialog must already be open."""
-    dialog.descendants()[3].click()   # browse button
+    _click_browse_button(dialog)
     _load_hed(hed_path)
 
-    dialog.set_focus()
 
     for btn_title in ("True color", "Bicubic"):
         btn = dialog.child_window(title=btn_title, class_name="Button")
@@ -252,13 +288,12 @@ def open_optv_las_dialog(main):
     )
     dialog.wait("exists visible ready", timeout=10)
     _move_offscreen(dialog.handle)
-    dialog.set_focus()
     return dialog
 
 
 def export_optv_las_file(dialog, hed_path: str):
     """Load one .hed and export LAS. Dialog must already be open."""
-    dialog.descendants()[3].click()
+    _click_browse_button(dialog)
     _load_hed(hed_path)
 
     for t in LAS_TARGETS:
@@ -289,13 +324,12 @@ def open_bhtv_las_dialog(main):
     )
     dialog.wait("exists visible ready", timeout=10)
     _move_offscreen(dialog.handle)
-    dialog.set_focus()
     return dialog
 
 
 def export_bhtv_las_file(dialog, hed_path: str):
     """Load one .hed and export LAS. Dialog must already be open."""
-    dialog.descendants()[3].click()
+    _click_browse_button(dialog)
     _load_hed(hed_path)
 
     for t in LAS_TARGETS:
