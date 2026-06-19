@@ -6,8 +6,6 @@ Usage (from project root):
     python -m modules.convert.batch_convert config/selected_hed_targets.json
 """
 
-import ctypes
-import ctypes.wintypes as _wt
 import json
 import logging
 import sys
@@ -21,7 +19,6 @@ import psutil
 from pywinauto.application import Application
 
 from modules.convert.vendor_app import (
-    _move_offscreen,
     open_picture_dialog, export_picture_file, close_picture_dialog,
     open_optv_las_dialog, export_optv_las_file, close_optv_las_dialog,
     open_bhtv_las_dialog, export_bhtv_las_file, close_bhtv_las_dialog,
@@ -31,47 +28,6 @@ OPTV_PATH = r"C:\Electromind\OPTV Logger\OPTV.exe"
 BHTV_PATH = r"C:\Electromind\BHTV Logger\BHTV.exe"
 
 log = logging.getLogger(__name__)
-
-_VENDOR_EXES = frozenset({"optv.exe", "bhtv.exe"})
-_WNDENUMPROC = ctypes.WINFUNCTYPE(_wt.BOOL, _wt.HWND, _wt.LPARAM)
-
-
-def _window_hider_thread(stop_event: threading.Event) -> None:
-    """
-    Polls every 50 ms for any window owned by a vendor process and moves it
-    off-screen immediately. Catches the main window, every export dialog,
-    the Open file dialog, and error popups — nothing flashes on the desktop.
-    """
-    moved: set[int] = set()
-    user32 = ctypes.windll.user32
-    target_pids: set[int] = set()
-
-    def _cb(hwnd: int, _: int) -> bool:
-        if hwnd not in moved:
-            try:
-                pid = _wt.DWORD(0)
-                user32.GetWindowThreadProcessId(hwnd, ctypes.byref(pid))
-                if pid.value in target_pids:
-                    _move_offscreen(hwnd)
-                    moved.add(hwnd)
-            except Exception:
-                pass
-        return True
-
-    enum_cb = _WNDENUMPROC(_cb)
-
-    while not stop_event.is_set():
-        target_pids.clear()
-        for proc in psutil.process_iter(["pid", "name"]):
-            try:
-                if (proc.info["name"] or "").lower() in _VENDOR_EXES:
-                    target_pids.add(proc.info["pid"])
-            except Exception:
-                pass
-        if target_pids:
-            user32.EnumWindows(enum_cb, 0)
-        stop_event.wait(0.05)
-
 
 # ---------------------------------------------------------------------------
 # App lifecycle helpers
@@ -106,7 +62,6 @@ def _start_optv():
     app.OPTV.OK.click()
     main = app.window(title_re=".*OPTV Acquisition.*")
     main.wait("visible", timeout=3)
-    _move_offscreen(main.handle)
     return main
 
 
@@ -117,7 +72,6 @@ def _start_bhtv():
     app.BHTV.OK.click()
     main = app.window(title_re=".*BHTV Acquisition.*")
     main.wait("visible", timeout=3)
-    _move_offscreen(main.handle)
     return main
 
 
@@ -276,12 +230,6 @@ def run_all(targets_json_path: str = "config/selected_hed_targets.json",
     bhtv = [t for t in targets if t["data_type"] == "BHTV"]
     log.info("Loaded %d OPTV, %d BHTV targets from %s", len(optv), len(bhtv), targets_json_path)
 
-    # Start background window hider — keeps all vendor windows off-screen
-    _hider_stop = threading.Event()
-    _hider = threading.Thread(target=_window_hider_thread,
-                              args=(_hider_stop,), daemon=True)
-    _hider.start()
-
     try:
         # Total operations: OPTV needs picture + LAS (2 passes), BHTV needs LAS only
         total_ops = 2 * len(optv) + len(bhtv)
@@ -319,8 +267,6 @@ def run_all(targets_json_path: str = "config/selected_hed_targets.json",
                 progress_total=total_ops,
             )
     finally:
-        _hider_stop.set()
-        _hider.join(timeout=1)
         if sys.exc_info()[0] is not None:
             root_log.removeHandler(file_handler)
             file_handler.close()

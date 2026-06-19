@@ -2,14 +2,12 @@
 
 Design: dialogs are opened ONCE before the batch loop and closed after.
 Each export_*_file() function loads a new .hed into the already-open dialog.
-All vendor windows are moved off-screen so they don't clutter the desktop.
-click() is used instead of click_input() — sends BM_CLICK directly to the
-handle and works on off-screen windows without moving the mouse cursor.
+click() is used instead of click_input() where possible so automation targets
+controls directly without moving the mouse cursor.
 """
 
 from __future__ import annotations
 
-import ctypes
 import time
 
 import pyperclip
@@ -21,12 +19,6 @@ _SWP_NOSIZE   = 0x0001
 _SWP_NOZORDER = 0x0004
 
 
-def _move_offscreen(hwnd: int) -> None:
-    """Move a window 10 000 px off the right edge — keeps it interactive but hidden."""
-    ctypes.windll.user32.SetWindowPos(
-        hwnd, 0, 10000, 0, 0, 0, _SWP_NOSIZE | _SWP_NOZORDER)
-
-
 # ---------------------------------------------------------------------------
 # Low-level helpers
 # ---------------------------------------------------------------------------
@@ -35,7 +27,6 @@ def _load_hed(hed_path: str):
     """Set hed_path in the open 'Open' file dialog and confirm."""
     open_dialog = Desktop(backend="win32").window(title="Open", class_name="#32770")
     open_dialog.wait("exists visible ready", timeout=10)
-    _move_offscreen(open_dialog.handle)
 
     try:
         edit = open_dialog.child_window(class_name="Edit")
@@ -89,7 +80,6 @@ def _handle_dialog(timeout: float = 1.0) -> str:
         try:
             dlg = Desktop(backend="win32").window(title=title, class_name="#32770")
             dlg.wait("exists visible ready", timeout=timeout)
-            _move_offscreen(dlg.handle)
         except Exception:
             continue
 
@@ -122,7 +112,6 @@ def _poll_handle_dialog():
             dlg = Desktop(backend="win32").window(title=title, class_name="#32770")
             if not dlg.exists():
                 continue
-            _move_offscreen(dlg.handle)
         except Exception:
             continue
 
@@ -240,11 +229,10 @@ def _open_export_menu(main, shortcut_key: str):
 # ---------------------------------------------------------------------------
 
 def open_picture_dialog(main):
-    """Navigate menu and return the open Picture export dialog (moved off-screen)."""
+    """Navigate menu and return the open Picture export dialog."""
     _open_export_menu(main, "p")
     dialog = Desktop(backend="win32").window(title_re=".*Picture export.*")
     dialog.wait("exists visible ready", timeout=10)
-    _move_offscreen(dialog.handle)
     return dialog
 
 
@@ -281,13 +269,12 @@ def close_picture_dialog(dialog):
 # ---------------------------------------------------------------------------
 
 def open_optv_las_dialog(main):
-    """Navigate menu and return the open LAS export dialog for OPTV (moved off-screen)."""
+    """Navigate menu and return the open LAS export dialog for OPTV."""
     _open_export_menu(main, "l")
     dialog = Desktop(backend="win32").window(
         title="LAS 2.0 exportation for OPTV", class_name="#32770"
     )
     dialog.wait("exists visible ready", timeout=10)
-    _move_offscreen(dialog.handle)
     return dialog
 
 
@@ -317,13 +304,12 @@ def close_optv_las_dialog(dialog):
 # ---------------------------------------------------------------------------
 
 def open_bhtv_las_dialog(main):
-    """Navigate menu and return the open LAS export dialog for BHTV (moved off-screen)."""
+    """Navigate menu and return the open LAS export dialog for BHTV."""
     _open_export_menu(main, "l")
     dialog = Desktop(backend="win32").window(
         title="LAS 2.0 exportation for BHTV", class_name="#32770"
     )
     dialog.wait("exists visible ready", timeout=10)
-    _move_offscreen(dialog.handle)
     return dialog
 
 

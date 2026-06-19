@@ -1,34 +1,18 @@
 [
   {
-    "hole": "Z364003006",
+    "hole": "GR26WAW0003",
     "data_type": "OPTV",
-    "run": "Z364003006_INRUN.hed",
-    "parent_directory": "C:\\2026_RTIO\\Paraburdo\\test\\Z364003006\\OTV",
-    "file_name": "Z364003006_INRUN.hed",
-    "path": "C:\\2026_RTIO\\Paraburdo\\test\\Z364003006\\OTV\\Z364003006_INRUN.hed"
+    "run": "GR26WAW0003_OBI_INRUN.hed",
+    "parent_directory": "C:\\2026_RTIO\\West Angelas\\batch\\GR26WAW0003\\OTV",
+    "file_name": "GR26WAW0003_OBI_INRUN.hed",
+    "path": "C:\\2026_RTIO\\West Angelas\\batch\\GR26WAW0003\\OTV\\GR26WAW0003_OBI_INRUN.hed"
   },
   {
-    "hole": "Z364003026",
-    "data_type": "OPTV",
-    "run": "Z364003026_INRUN.hed",
-    "parent_directory": "C:\\2026_RTIO\\Paraburdo\\test\\Z364003026\\OTV",
-    "file_name": "Z364003026_INRUN.hed",
-    "path": "C:\\2026_RTIO\\Paraburdo\\test\\Z364003026\\OTV\\Z364003026_INRUN.hed"
-  },
-  {
-    "hole": "Z364003057",
-    "data_type": "OPTV",
-    "run": "Z364003057_INRUN.hed",
-    "parent_directory": "C:\\2026_RTIO\\Paraburdo\\test\\Z364003057\\OTV",
-    "file_name": "Z364003057_INRUN.hed",
-    "path": "C:\\2026_RTIO\\Paraburdo\\test\\Z364003057\\OTV\\Z364003057_INRUN.hed"
-  },
-  {
-    "hole": "Z364003085",
-    "data_type": "OPTV",
-    "run": "Z364003085_INRUN.hed",
-    "parent_directory": "C:\\2026_RTIO\\Paraburdo\\test\\Z364003085\\OTV",
-    "file_name": "Z364003085_INRUN.hed",
-    "path": "C:\\2026_RTIO\\Paraburdo\\test\\Z364003085\\OTV\\Z364003085_INRUN.hed"
+    "hole": "GR26WAW0003",
+    "data_type": "BHTV",
+    "run": "GR26WAW0003_OUTRUN_N.hed",
+    "parent_directory": "C:\\2026_RTIO\\West Angelas\\batch\\GR26WAW0003\\ATV",
+    "file_name": "GR26WAW0003_OUTRUN_N.hed",
+    "path": "C:\\2026_RTIO\\West Angelas\\batch\\GR26WAW0003\\ATV\\GR26WAW0003_OUTRUN_N.hed"
   }
 ]
