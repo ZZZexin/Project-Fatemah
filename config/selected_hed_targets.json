@@ -1,18 +1,42 @@
 [
   {
-    "hole": "GR26WAW0003",
+    "hole": "GR26WAH0002",
     "data_type": "OPTV",
-    "run": "GR26WAW0003_OBI_INRUN.hed",
-    "parent_directory": "C:\\2026_RTIO\\West Angelas\\batch\\GR26WAW0003\\OTV",
-    "file_name": "GR26WAW0003_OBI_INRUN.hed",
-    "path": "C:\\2026_RTIO\\West Angelas\\batch\\GR26WAW0003\\OTV\\GR26WAW0003_OBI_INRUN.hed"
+    "run": "GR26WAH0002_OBI_INRUN.hed",
+    "parent_directory": "C:\\2026_RTIO\\West Angelas\\batch\\GR26WAH0002\\OTV",
+    "file_name": "GR26WAH0002_OBI_INRUN.hed",
+    "path": "C:\\2026_RTIO\\West Angelas\\batch\\GR26WAH0002\\OTV\\GR26WAH0002_OBI_INRUN.hed"
   },
   {
-    "hole": "GR26WAW0003",
-    "data_type": "BHTV",
-    "run": "GR26WAW0003_OUTRUN_N.hed",
-    "parent_directory": "C:\\2026_RTIO\\West Angelas\\batch\\GR26WAW0003\\ATV",
-    "file_name": "GR26WAW0003_OUTRUN_N.hed",
-    "path": "C:\\2026_RTIO\\West Angelas\\batch\\GR26WAW0003\\ATV\\GR26WAW0003_OUTRUN_N.hed"
+    "hole": "GR26WAH0003",
+    "data_type": "OPTV",
+    "run": "GR26WAH0003_OBI_INRUN.hed",
+    "parent_directory": "C:\\2026_RTIO\\West Angelas\\batch\\GR26WAH0003\\OTV",
+    "file_name": "GR26WAH0003_OBI_INRUN.hed",
+    "path": "C:\\2026_RTIO\\West Angelas\\batch\\GR26WAH0003\\OTV\\GR26WAH0003_OBI_INRUN.hed"
+  },
+  {
+    "hole": "GR26WAW0001",
+    "data_type": "OPTV",
+    "run": "GR26WAW0001_OBI_INRUN.hed",
+    "parent_directory": "C:\\2026_RTIO\\West Angelas\\batch\\GR26WAW0001\\OTV",
+    "file_name": "GR26WAW0001_OBI_INRUN.hed",
+    "path": "C:\\2026_RTIO\\West Angelas\\batch\\GR26WAW0001\\OTV\\GR26WAW0001_OBI_INRUN.hed"
+  },
+  {
+    "hole": "RC26WAH0006",
+    "data_type": "OPTV",
+    "run": "RC26WAH0006_OBI_INRUN.hed",
+    "parent_directory": "C:\\2026_RTIO\\West Angelas\\batch\\RC26WAH0006\\OTV",
+    "file_name": "RC26WAH0006_OBI_INRUN.hed",
+    "path": "C:\\2026_RTIO\\West Angelas\\batch\\RC26WAH0006\\OTV\\RC26WAH0006_OBI_INRUN.hed"
+  },
+  {
+    "hole": "RC26WAH0009",
+    "data_type": "OPTV",
+    "run": "RC26WAH0009_OBI_INRUN.hed",
+    "parent_directory": "C:\\2026_RTIO\\West Angelas\\batch\\RC26WAH0009\\OTV",
+    "file_name": "RC26WAH0009_OBI_INRUN.hed",
+    "path": "C:\\2026_RTIO\\West Angelas\\batch\\RC26WAH0009\\OTV\\RC26WAH0009_OBI_INRUN.hed"
   }
 ]

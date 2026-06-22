@@ -16,6 +16,7 @@ from pathlib import Path
 from typing import Callable
 
 import psutil
+from pywinauto import Desktop
 from pywinauto.application import Application
 
 from modules.convert.vendor_app import (
@@ -28,6 +29,8 @@ OPTV_PATH = r"C:\Electromind\OPTV Logger\OPTV.exe"
 BHTV_PATH = r"C:\Electromind\BHTV Logger\BHTV.exe"
 
 log = logging.getLogger(__name__)
+_BM_CLICK = 0x00F5
+_STARTUP_WARNING_TIMEOUT = 0.8
 
 # ---------------------------------------------------------------------------
 # App lifecycle helpers
@@ -52,26 +55,58 @@ def _kill_app(exe_path: str):
             pass
     if procs:
         psutil.wait_procs(procs, timeout=5)
-    time.sleep(1)
+        time.sleep(0.2)
+
+
+def dismiss_startup_warning(app_title: str, process_id: int | None = None) -> bool:
+    """Dismiss the startup warning dialog without moving the mouse."""
+    attempts = []
+    if process_id is not None:
+        attempts.append({"title": app_title, "class_name": "#32770", "process": process_id})
+    attempts.append({"title": app_title, "class_name": "#32770"})
+
+    for criteria in attempts:
+        try:
+            dlg = Desktop(backend="win32").window(**criteria)
+            dlg.wait("exists visible ready", timeout=_STARTUP_WARNING_TIMEOUT)
+            ok = dlg.child_window(title="OK", class_name="Button")
+            ok.wait("enabled", timeout=0.5)
+            ok.send_message(_BM_CLICK)
+            return True
+        except Exception:
+            pass
+    return False
+
+
+def _app_process_id(app) -> int | None:
+    process = getattr(app, "process", None)
+    if callable(process):
+        try:
+            return process()
+        except Exception:
+            return None
+    return process
 
 
 def _start_optv():
+    start = time.perf_counter()
     _kill_app(OPTV_PATH)
     app = Application(backend="uia").start(OPTV_PATH)
-    app.OPTV.wait("visible", timeout=4)
-    app.OPTV.OK.click()
+    dismiss_startup_warning("OPTV", _app_process_id(app))
     main = app.window(title_re=".*OPTV Acquisition.*")
     main.wait("visible", timeout=3)
+    log.info("OPTV startup ready in %.1fs", time.perf_counter() - start)
     return main
 
 
 def _start_bhtv():
+    start = time.perf_counter()
     _kill_app(BHTV_PATH)
     app = Application(backend="uia").start(BHTV_PATH)
-    app.BHTV.wait("visible", timeout=4)
-    app.BHTV.OK.click()
+    dismiss_startup_warning("BHTV", _app_process_id(app))
     main = app.window(title_re=".*BHTV Acquisition.*")
     main.wait("visible", timeout=3)
+    log.info("BHTV startup ready in %.1fs", time.perf_counter() - start)
     return main
 
 
@@ -93,7 +128,9 @@ def _run_loop(entries, app_start_fn, open_dialog_fn, export_fn, close_dialog_fn,
     """
     results = {}
     main = app_start_fn()
+    dialog_start = time.perf_counter()
     dialog = open_dialog_fn(main)
+    log.info("%s dialog ready in %.1fs", export_label, time.perf_counter() - dialog_start)
 
     for i, entry in enumerate(entries):
         if stop_event and stop_event.is_set():
@@ -106,9 +143,13 @@ def _run_loop(entries, app_start_fn, open_dialog_fn, export_fn, close_dialog_fn,
         hed_path = entry["path"]
         try:
             log.info("[%s] %s — start", hole, export_label)
-            export_fn(dialog, hed_path)
-            results[hole] = "ok"
-            log.info("[%s] %s — done", hole, export_label)
+            result = export_fn(dialog, hed_path)
+            if result == "skipped":
+                results[hole] = "SKIPPED: output exists"
+                log.info("[%s] %s — skipped: output exists", hole, export_label)
+            else:
+                results[hole] = "ok"
+                log.info("[%s] %s — done", hole, export_label)
             if progress_cb:
                 progress_cb(progress_offset + i + 1, progress_total,
                             f"{export_label} — {hole}")
@@ -275,7 +316,7 @@ def run_all(targets_json_path: str = "config/selected_hed_targets.json",
     for dtype, results in all_results.items():
         for hole, status in results.items():
             for export_type, result in status.items():
-                tag = "OK  " if result == "ok" else "FAIL"
+                tag = "OK  " if result == "ok" else "SKIP" if str(result).startswith("SKIPPED") else "FAIL"
                 log.info("  %s  [%s] %-20s %s  %s", tag, dtype, hole, export_type,
                          "" if result == "ok" else result)
 

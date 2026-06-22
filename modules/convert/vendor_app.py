@@ -14,10 +14,7 @@ import pyperclip
 from pywinauto import Desktop
 
 LAS_TARGETS = ["Inclination", "Azimuth", "Total Mag.", "Natural Gamma"]
-
-_SWP_NOSIZE   = 0x0001
-_SWP_NOZORDER = 0x0004
-
+_OPEN_EDIT_TIMEOUT = 1.0
 
 # ---------------------------------------------------------------------------
 # Low-level helpers
@@ -30,7 +27,7 @@ def _load_hed(hed_path: str):
 
     try:
         edit = open_dialog.child_window(class_name="Edit")
-        edit.wait("exists enabled", timeout=3)
+        edit.wait("exists enabled", timeout=_OPEN_EDIT_TIMEOUT)
         edit.set_edit_text(hed_path)
         open_dialog.child_window(title_re=".*Open.*", class_name="Button").click()
         return
@@ -155,7 +152,7 @@ def _wait_picture_complete(dialog, timeout: float = 300):
 
     status 0→1 when 'Creating LGX Pass...wait...' appears in a direct child.
     status 1→0 (done) when it disappears and is still gone after 0.1 s.
-    If it never appears within 15 s, assumes export was instant and returns.
+    If it never appears within 15 s, raises because the export did not start.
     _poll_handle_dialog is called every 5th iteration (~0.5 s) to catch errors.
     """
     deadline = time.time() + timeout
@@ -203,25 +200,10 @@ def _wait_las_complete(dialog, timeout: float = 120):
 
 def _open_export_menu(main, shortcut_key: str):
     """Alt+F → x (Export) → shortcut_key."""
-    menu_paths = {
-        "p": ("File->Export->Picture", "File->Export->Picture export"),
-        "l": ("File->Export->LAS", "File->Export->LAS 2.0"),
-    }
-    for path in menu_paths.get(shortcut_key, ()):
-        try:
-            main.menu_select(path)
-            time.sleep(0.05)
-            return
-        except Exception:
-            pass
-
     main.set_focus()
     main.type_keys("%f")
-    time.sleep(0.05)
     main.type_keys("x")
-    time.sleep(0.05)
     main.type_keys(shortcut_key)
-    time.sleep(0.05)
 
 
 # ---------------------------------------------------------------------------
@@ -255,9 +237,12 @@ def export_picture_file(dialog, hed_path: str):
 
     dialog.child_window(title="&Export", class_name="Button").click()
 
-    _handle_dialog(timeout=1.0)
+    result = _handle_dialog(timeout=1.0)
+    if result == "skipped":
+        return "skipped"
 
     _wait_picture_complete(dialog, timeout=300)
+    return "ok"
 
 
 def close_picture_dialog(dialog):
