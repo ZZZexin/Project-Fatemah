@@ -31,9 +31,15 @@ else:
 
 # ── project imports ─────────────────────────────────────────────────────────
 try:
-    from organize_hole_files import build_plan, apply_plan, extract_zips, delete_unwanted_files, delete_empty_dirs
+    from organize_hole_files import (build_plan, apply_plan, extract_zips,
+                                      delete_unwanted_files, delete_empty_dirs,
+                                      discover_holes, ensure_hole_structure,
+                                      archive_zips)
 except ImportError:
-    from ui.organize_hole_files import build_plan, apply_plan, extract_zips, delete_unwanted_files, delete_empty_dirs
+    from ui.organize_hole_files import (build_plan, apply_plan, extract_zips,
+                                        delete_unwanted_files, delete_empty_dirs,
+                                        discover_holes, ensure_hole_structure,
+                                        archive_zips)
 
 try:
     from hed_target_selector import (
@@ -228,22 +234,35 @@ class OrganiseSection(ttk.LabelFrame):
         if not dirs:
             return
         source_dir, output_dir = dirs
+        # Re-derive from the current disk state so a stale scan can't trigger
+        # work — and so an already-sorted folder does nothing.
         if not self._actions:
-            self._status_var.set("Nothing to organise — continuing.")
-            if self.on_organized:
-                self.on_organized(output_dir)
+            self._actions = build_plan(source_dir, output_dir,
+                                       extract_zip=self._zip_var.get())
+        if not self._actions:
+            self._status_var.set("Already organised — nothing to do.")
             return
+        holes = {a.hole for a in self._actions}
         try:
             apply_plan(self._actions, mode=self._mode_var.get())
         except OSError as exc:
             messagebox.showerror("Apply failed", str(exc))
             return
-        verb = "moved" if self._mode_var.get() == "move" else "copied"
-        deleted = delete_unwanted_files(source_dir) if self._mode_var.get() == "move" else 0
-        removed = delete_empty_dirs(source_dir) if self._mode_var.get() == "move" else 0
+        move_mode = self._mode_var.get() == "move"
+        verb = "moved" if move_mode else "copied"
+        deleted = delete_unwanted_files(source_dir) if move_mode else 0
+        # In move mode, tuck the processed zips into sorted/ so the next run
+        # finds nothing to do, then sweep empty dirs.
+        archived = archive_zips(source_dir) if move_mode else 0
+        removed = delete_empty_dirs(source_dir) if move_mode else 0
+        # (re)create the standard OTV/ATV/GPX layout for every hole — both the
+        # ones we just moved and any already present.
+        ensure_hole_structure(output_dir, holes | discover_holes(output_dir))
         parts = [f"{len(self._actions)} files {verb}"]
         if deleted:
             parts.append(f"{deleted} PDF/LAS deleted")
+        if archived:
+            parts.append(f"{archived} zips → sorted/")
         if removed:
             parts.append(f"{removed} empty dirs removed")
         self._status_var.set("Done — " + ", ".join(parts) + ".")

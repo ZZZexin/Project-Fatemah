@@ -1,8 +1,8 @@
 @echo off
 :: ====== EDIT THIS LINE TO BUMP THE VERSION =================================
-set VERSION=0.1.1
+set VERSION=0.1.2
 :: ==========================================================================
-set APP_NAME=EMind_Fatemah_v%VERSION%
+set APP_NAME=AutoTVC_v%VERSION%
 
 echo ============================================================
 echo  Building %APP_NAME%

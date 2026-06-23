@@ -30,6 +30,10 @@ OTV_MARKERS = ("OPTV", "OTV", "OBI")
 ATV_MARKERS = ("BHTV", "ATV", "ABI", "BTV", "ATS")
 SORTABLE_EXTENSIONS = {".hed", ".lox", ".lgx", ".xlsx", ".log"}
 
+# After organising, processed zips are moved here. The organiser ignores
+# everything inside this folder, so once it exists the delivery is "done".
+SORTED_DIRNAME = "sorted"
+
 
 @dataclass(frozen=True)
 class OrganizeAction:
@@ -124,22 +128,35 @@ def classify_file(path: Path) -> str | None:
 # ---------------------------------------------------------------------------
 
 def extract_zips(source_dir: Path) -> list[Path]:
-    """Extract all .zip files anywhere under source_dir, including zips inside zips."""
+    """Extract all .zip files anywhere under source_dir, including zips inside zips.
+
+    A member is skipped if a file with the same name already exists ANYWHERE
+    under source_dir — so once a delivery has been extracted and sorted into
+    HoleID/<type>/ folders, re-running does not recreate the loose files.
+    """
     extracted: list[Path] = []
     seen: set[Path] = set()
     while True:
-        new_zips = [z for z in sorted(source_dir.rglob("*.zip")) if z not in seen]
+        new_zips = [z for z in sorted(source_dir.rglob("*.zip"))
+                    if z not in seen and SORTED_DIRNAME not in z.parts]
         if not new_zips:
             break
+        # Names of every file already present (extracted-and-sorted or original).
+        existing_names = {p.name for p in source_dir.rglob("*") if p.is_file()}
         for zip_path in new_zips:
             seen.add(zip_path)
             try:
                 with zipfile.ZipFile(zip_path, "r") as zf:
                     for member in zf.namelist():
+                        name = Path(member).name
+                        if not name:          # directory entry
+                            continue
                         dest = source_dir / member
-                        if not dest.exists():
-                            zf.extract(member, source_dir)
-                            extracted.append(source_dir / member)
+                        if dest.exists() or name in existing_names:
+                            continue
+                        zf.extract(member, source_dir)
+                        extracted.append(source_dir / member)
+                        existing_names.add(name)
             except (zipfile.BadZipFile, OSError):
                 pass
     return extracted
@@ -162,6 +179,10 @@ def build_plan(
 
     for source in sorted(source_dir.rglob("*")):
         if not source.is_file():
+            continue
+
+        # Skip the archived-zips folder entirely — it's already-processed data.
+        if SORTED_DIRNAME in source.relative_to(source_dir).parts:
             continue
 
         # Skip anything already inside output_dir when output ≠ source
@@ -227,6 +248,31 @@ def delete_unwanted_files(root: Path) -> int:
     return deleted
 
 
+def archive_zips(source_dir: Path) -> int:
+    """Move every processed .zip into source_dir/sorted/ and return the count.
+
+    Zips already inside the sorted folder are left alone. This marks the
+    delivery as organised — the next run ignores sorted/ and finds nothing to do.
+    """
+    sorted_dir = source_dir / SORTED_DIRNAME
+    moved = 0
+    zips = [z for z in source_dir.rglob("*.zip") if SORTED_DIRNAME not in z.parts]
+    for zip_path in zips:
+        sorted_dir.mkdir(parents=True, exist_ok=True)
+        dest = sorted_dir / zip_path.name
+        # Avoid clobbering a same-named zip from another delivery batch.
+        n = 1
+        while dest.exists():
+            dest = sorted_dir / f"{zip_path.stem}_{n}{zip_path.suffix}"
+            n += 1
+        try:
+            shutil.move(str(zip_path), str(dest))
+            moved += 1
+        except OSError:
+            pass
+    return moved
+
+
 def delete_empty_dirs(root: Path) -> int:
     """Remove empty directories under root (deepest first). Returns count deleted."""
     deleted = 0
@@ -252,12 +298,36 @@ def apply_plan(actions: list[OrganizeAction], mode: str = "copy") -> None:
         else:
             shutil.copy2(action.source, action.destination)
 
-    # Guarantee OTV, ATV and GPX folders exist under every hole that was touched,
-    # regardless of which types actually had files.
-    hole_roots = {action.destination.parent.parent for action in actions}
-    for hole_root in hole_roots:
+
+def discover_holes(output_dir: Path) -> set[str]:
+    """Return names of already-organised hole folders under output_dir.
+
+    A hole folder is any immediate child directory that already contains at
+    least one standard subtype folder (OTV / ATV / GPX).
+    """
+    holes: set[str] = set()
+    if not output_dir.is_dir():
+        return holes
+    for child in output_dir.iterdir():
+        if child.is_dir() and any((child / s).is_dir() for s in _STANDARD_SUBTYPES):
+            holes.add(child.name)
+    return holes
+
+
+def ensure_hole_structure(output_dir: Path, holes: set[str]) -> int:
+    """Guarantee OTV, ATV and GPX subfolders exist under every given hole.
+
+    Run this AFTER delete_empty_dirs so the empty placeholders aren't swept away.
+    Returns the number of folders created.
+    """
+    created = 0
+    for hole in holes:
         for dtype in _STANDARD_SUBTYPES:
-            (hole_root / dtype).mkdir(parents=True, exist_ok=True)
+            d = output_dir / hole / dtype
+            if not d.exists():
+                d.mkdir(parents=True, exist_ok=True)
+                created += 1
+    return created
 
 
 def write_manifest(actions: list[OrganizeAction], manifest_path: Path) -> None:
@@ -314,7 +384,13 @@ def main() -> None:
 
     if args.apply:
         apply_plan(actions, mode=args.mode)
-        print(f"Applied ({args.mode}).")
+        if args.mode == "move":
+            delete_unwanted_files(source_dir)
+            archive_zips(source_dir)
+            delete_empty_dirs(source_dir)
+        holes = {a.hole for a in actions} | discover_holes(output_dir)
+        created = ensure_hole_structure(output_dir, holes)
+        print(f"Applied ({args.mode}). {created} standard folders ensured.")
     else:
         print("Dry-run. Use --apply to execute.")
 
