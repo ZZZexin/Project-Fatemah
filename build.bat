@@ -1,23 +1,26 @@
 @echo off
+:: ====== EDIT THIS LINE TO BUMP THE VERSION =================================
+set VERSION=0.1.1
+:: ==========================================================================
+set APP_NAME=EMind_Fatemah_v%VERSION%
+
 echo ============================================================
-echo  TV Pipeline -- build TvPipeline.exe
+echo  Building %APP_NAME%
 echo ============================================================
 echo.
 
-:: Check Python is available
 python --version >nul 2>&1
 if errorlevel 1 (
     echo ERROR: python not found on PATH.
     pause & exit /b 1
 )
 
-:: Install / upgrade PyInstaller quietly
-echo Installing PyInstaller...
-pip install pyinstaller --quiet --upgrade
+echo Installing build + runtime dependencies...
+python -m pip install pyinstaller pywinauto psutil pyperclip comtypes --quiet --upgrade
 
 echo.
-echo Building (this takes 1-3 minutes the first time)...
-pyinstaller build.spec --noconfirm --clean
+echo Building exe (1-3 minutes the first time)...
+python -m PyInstaller build.spec --noconfirm --clean
 
 if errorlevel 1 (
     echo.
@@ -26,11 +29,17 @@ if errorlevel 1 (
 )
 
 echo.
-echo ============================================================
-echo  Done!  Output: dist\TvPipeline.exe
+echo Zipping...
+powershell -Command "Compress-Archive -Path 'dist\%APP_NAME%.exe' -DestinationPath 'dist\%APP_NAME%.zip' -Force"
+
 echo.
-echo  Copy TvPipeline.exe to any department PC.
-echo  On first launch it creates a  config\  folder next to it
-echo  for saved settings and a  logs\  folder for convert logs.
+echo ============================================================
+echo  Done!
+echo    dist\%APP_NAME%.exe  -- run directly
+echo    dist\%APP_NAME%.zip  -- share this
+echo.
+echo  Unzip anywhere, double-click %APP_NAME%.exe.
+echo  config\ and logs\ folders are created next to the exe
+echo  automatically on first run.
 echo ============================================================
 pause

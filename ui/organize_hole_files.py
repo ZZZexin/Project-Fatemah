@@ -241,6 +241,9 @@ def delete_empty_dirs(root: Path) -> int:
     return deleted
 
 
+_STANDARD_SUBTYPES = ("OTV", "ATV", "GPX")
+
+
 def apply_plan(actions: list[OrganizeAction], mode: str = "copy") -> None:
     for action in actions:
         action.destination.parent.mkdir(parents=True, exist_ok=True)
@@ -248,6 +251,13 @@ def apply_plan(actions: list[OrganizeAction], mode: str = "copy") -> None:
             shutil.move(str(action.source), str(action.destination))
         else:
             shutil.copy2(action.source, action.destination)
+
+    # Guarantee OTV, ATV and GPX folders exist under every hole that was touched,
+    # regardless of which types actually had files.
+    hole_roots = {action.destination.parent.parent for action in actions}
+    for hole_root in hole_roots:
+        for dtype in _STANDARD_SUBTYPES:
+            (hole_root / dtype).mkdir(parents=True, exist_ok=True)
 
 
 def write_manifest(actions: list[OrganizeAction], manifest_path: Path) -> None:

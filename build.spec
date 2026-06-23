@@ -1,7 +1,12 @@
-# build.spec — PyInstaller spec for TvPipeline.exe
+# build.spec — PyInstaller spec for EMind_Fatemah
 # Run:  pyinstaller build.spec --noconfirm --clean
+# The exe name is set by build.bat via the APP_NAME env var; defaults below.
+
+import os
 
 from PyInstaller.utils.hooks import collect_all, collect_submodules
+
+APP_NAME = os.environ.get("APP_NAME", "EMind_Fatemah_v0.0")
 
 block_cipher = None
 
@@ -52,7 +57,7 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name="TvPipeline",
+    name=APP_NAME,
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
