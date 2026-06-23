@@ -254,7 +254,10 @@ def run_all(targets_json_path: str = "config/selected_hed_targets.json",
         root_log.addHandler(stream_handler)
 
     # Load configured exe paths from persisted state (set via Config dialog)
-    _state_path = Path(__file__).resolve().parents[2] / "config" / "launcher_state.json"
+    if getattr(sys, "frozen", False):
+        _state_path = Path(sys.executable).resolve().parent / "config" / "launcher_state.json"
+    else:
+        _state_path = Path(__file__).resolve().parents[2] / "config" / "launcher_state.json"
     try:
         _st = json.loads(_state_path.read_text(encoding="utf-8"))
         if _st.get("optv_path"):

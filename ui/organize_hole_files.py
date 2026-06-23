@@ -13,12 +13,17 @@ import argparse
 import configparser
 import csv
 import shutil
+import sys
 import zipfile
 from dataclasses import dataclass
 from pathlib import Path
 
 
-PROJECT_ROOT = Path(__file__).resolve().parents[1]
+PROJECT_ROOT = (
+    Path(sys.executable).resolve().parent
+    if getattr(sys, "frozen", False)
+    else Path(__file__).resolve().parents[1]
+)
 DEFAULT_SOURCE_DIR = Path(r"C:\2026_RTIO\West Angelas\Sent")
 
 OTV_MARKERS = ("OPTV", "OTV", "OBI")

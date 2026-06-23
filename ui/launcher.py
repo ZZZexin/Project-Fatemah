@@ -19,10 +19,15 @@ from tkinter import filedialog, messagebox, scrolledtext, ttk
 
 # ── path setup ──────────────────────────────────────────────────────────────
 _UI_DIR = Path(__file__).resolve().parent
-_ROOT = _UI_DIR.parent
-for _p in (str(_ROOT), str(_UI_DIR)):
-    if _p not in sys.path:
-        sys.path.insert(0, _p)
+# When frozen by PyInstaller, keep config/logs next to the .exe, not in the
+# temp extraction dir (_MEIPASS).
+if getattr(sys, "frozen", False):
+    _ROOT = Path(sys.executable).resolve().parent
+else:
+    _ROOT = _UI_DIR.parent
+    for _p in (str(_ROOT), str(_UI_DIR)):
+        if _p not in sys.path:
+            sys.path.insert(0, _p)
 
 # ── project imports ─────────────────────────────────────────────────────────
 try:
